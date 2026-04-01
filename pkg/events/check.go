@@ -430,7 +430,7 @@ func (ce *CheckEvent) Process(ctx context.Context) error {
 	// Update the AI review comment with aggregated results
 	if ce.aiNote != nil {
 		aiComment, aiWorstState, suggestions := ce.buildAIReviewComment(ctx)
-		if err = ce.ctr.VcsClient.UpdateMessage(ctx, ce.aiNote, aiComment); err != nil {
+		if err = ce.ctr.VcsClient.UpdateMessage(ctx, ce.pullRequest, ce.aiNote, []string{aiComment}); err != nil {
 			ce.logger.Error().Caller().Err(err).Msg("failed to update AI review comment")
 		}
 		// Post code suggestions as a separate review with inline comments
