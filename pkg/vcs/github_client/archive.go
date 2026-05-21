@@ -123,18 +123,21 @@ func (c *Client) DownloadArchive(ctx context.Context, pr vcs.PullRequest) (strin
 
 	mergeCommitSHA := *ghPR.MergeCommitSHA
 
-	// Construct archive URL
-	// Format: https://github.com/{owner}/{repo}/archive/{sha}.zip
-	// Or for enterprise: https://{base_url}/{owner}/{repo}/archive/{sha}.zip
+	// Construct archive URL using the REST API zipball endpoint rather than the
+	// web-UI archive URL (github.com/{owner}/{repo}/archive/{sha}.zip). The web
+	// URL returns 404 for private repos even with a valid Bearer token — that
+	// endpoint is gated by a browser session cookie, not API auth. The REST API
+	// endpoint accepts Bearer tokens and 302-redirects to a pre-signed
+	// codeload.github.com URL whose token rides in the query string, so the
+	// cross-host redirect (where Go's http.Client strips Authorization) is
+	// harmless. See https://github.com/zapier/kubechecks/issues/525.
 	var archiveURL string
 	if c.cfg.VcsBaseUrl != "" {
-		// GitHub Enterprise
-		baseURL := strings.TrimSuffix(c.cfg.VcsBaseUrl, "/api/v3")
-		baseURL = strings.TrimSuffix(baseURL, "/")
-		archiveURL = fmt.Sprintf("%s/%s/%s/archive/%s.zip", baseURL, pr.Owner, pr.Name, mergeCommitSHA)
+		// GitHub Enterprise: VcsBaseUrl is typically ".../api/v3" — keep it.
+		baseURL := strings.TrimSuffix(c.cfg.VcsBaseUrl, "/")
+		archiveURL = fmt.Sprintf("%s/repos/%s/%s/zipball/%s", baseURL, pr.Owner, pr.Name, mergeCommitSHA)
 	} else {
-		// GitHub.com
-		archiveURL = fmt.Sprintf("https://github.com/%s/%s/archive/%s.zip", pr.Owner, pr.Name, mergeCommitSHA)
+		archiveURL = fmt.Sprintf("https://api.github.com/repos/%s/%s/zipball/%s", pr.Owner, pr.Name, mergeCommitSHA)
 	}
 
 	log.Debug().
