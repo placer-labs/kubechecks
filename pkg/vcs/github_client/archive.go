@@ -131,13 +131,18 @@ func (c *Client) DownloadArchive(ctx context.Context, pr vcs.PullRequest) (strin
 	// codeload.github.com URL whose token rides in the query string, so the
 	// cross-host redirect (where Go's http.Client strips Authorization) is
 	// harmless. See https://github.com/zapier/kubechecks/issues/525.
+	//
+	// Note: config.LoadAndValidate sets VcsBaseUrl to "https://github.com" by
+	// default when VcsType=github, so we can't rely on emptiness to detect the
+	// github.com case. Match the host explicitly.
 	var archiveURL string
-	if c.cfg.VcsBaseUrl != "" {
-		// GitHub Enterprise: VcsBaseUrl is typically ".../api/v3" — keep it.
-		baseURL := strings.TrimSuffix(c.cfg.VcsBaseUrl, "/")
-		archiveURL = fmt.Sprintf("%s/repos/%s/%s/zipball/%s", baseURL, pr.Owner, pr.Name, mergeCommitSHA)
-	} else {
+	baseURL := strings.TrimSuffix(c.cfg.VcsBaseUrl, "/")
+	if baseURL == "" || baseURL == "https://github.com" || baseURL == "http://github.com" {
+		// GitHub.com — the REST API lives on a different host.
 		archiveURL = fmt.Sprintf("https://api.github.com/repos/%s/%s/zipball/%s", pr.Owner, pr.Name, mergeCommitSHA)
+	} else {
+		// GitHub Enterprise: VcsBaseUrl is the API URL (e.g. https://ghe.example.com/api/v3).
+		archiveURL = fmt.Sprintf("%s/repos/%s/%s/zipball/%s", baseURL, pr.Owner, pr.Name, mergeCommitSHA)
 	}
 
 	log.Debug().

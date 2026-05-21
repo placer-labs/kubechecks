@@ -301,13 +301,38 @@ func (m *Manager) PostArchiveErrorMessage(ctx context.Context, pr vcs.PullReques
 
 // extractSHAFromArchiveURL extracts the commit SHA from an archive URL
 // Supports GitHub and GitLab archive URL formats:
-// - GitHub: https://github.com/owner/repo/archive/{sha}.zip
+// - GitHub REST API: https://api.github.com/repos/owner/repo/zipball/{sha}
+//   (or GHE equivalent: https://ghe.example.com/api/v3/repos/owner/repo/zipball/{sha})
+// - GitHub web (legacy): https://github.com/owner/repo/archive/{sha}.zip
 // - GitLab: https://gitlab.com/api/v4/projects/{encoded}/repository/archive.zip?sha={ref}
 func extractSHAFromArchiveURL(archiveURL string) (string, error) {
-	// Try GitHub format first: /archive/{sha}.zip or /archive/{sha}.tar.gz
-	if strings.Contains(archiveURL, "/archive/") {
+	// Strip query string and fragment, then any trailing slash, before any
+	// suffix-based parsing.
+	cleanURL := archiveURL
+	if i := strings.IndexAny(cleanURL, "?#"); i >= 0 {
+		cleanURL = cleanURL[:i]
+	}
+	cleanURL = strings.TrimSuffix(cleanURL, "/")
+
+	// Try GitHub REST API zipball/tarball format: /zipball/{sha} or /tarball/{sha}
+	for _, sep := range []string{"/zipball/", "/tarball/"} {
+		if idx := strings.LastIndex(cleanURL, sep); idx >= 0 {
+			sha := cleanURL[idx+len(sep):]
+			// Strip any optional extension (some hosts append .zip/.tar.gz).
+			if ext := filepath.Ext(sha); ext != "" {
+				sha = strings.TrimSuffix(sha, ext)
+			}
+			if sha == "" {
+				return "", fmt.Errorf("empty SHA extracted from archive URL: %s", archiveURL)
+			}
+			return sha, nil
+		}
+	}
+
+	// Try GitHub web archive format: /archive/{sha}.zip or /archive/{sha}.tar.gz
+	if strings.Contains(cleanURL, "/archive/") {
 		// Extract filename from URL path
-		parts := strings.Split(archiveURL, "/archive/")
+		parts := strings.Split(cleanURL, "/archive/")
 		if len(parts) < 2 {
 			return "", fmt.Errorf("invalid GitHub archive URL format: %s", archiveURL)
 		}

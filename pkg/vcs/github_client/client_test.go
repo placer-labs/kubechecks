@@ -913,7 +913,7 @@ func TestClient_DownloadArchive_HappyPath(t *testing.T) {
 
 	url, err := c.DownloadArchive(context.Background(), pr)
 	require.NoError(t, err)
-	assert.Equal(t, "https://github.com/owner/repo/archive/merge-abc123.zip", url)
+	assert.Equal(t, "https://api.github.com/repos/owner/repo/zipball/merge-abc123", url)
 	mockPR.AssertExpectations(t)
 }
 
@@ -952,7 +952,7 @@ func TestClient_DownloadArchive_StaleMergeCommitThenReady(t *testing.T) {
 	url, err := c.DownloadArchive(context.Background(), pr)
 	require.NoError(t, err)
 	// Must use the fresh merge SHA, not the stale one
-	assert.Equal(t, "https://github.com/owner/repo/archive/fresh-new-merge.zip", url)
+	assert.Equal(t, "https://api.github.com/repos/owner/repo/zipball/fresh-new-merge", url)
 	assert.NotContains(t, url, "stale-old-merge")
 	mockPR.AssertExpectations(t)
 }
@@ -1050,7 +1050,7 @@ func TestClient_DownloadArchive_GHEnterprise(t *testing.T) {
 
 	url, err := c.DownloadArchive(context.Background(), pr)
 	require.NoError(t, err)
-	assert.Equal(t, "https://github.example.com/myorg/myrepo/archive/merge-sha.zip", url)
+	assert.Equal(t, "https://github.example.com/api/v3/repos/myorg/myrepo/zipball/merge-sha", url)
 	mockPR.AssertExpectations(t)
 }
 
