@@ -26,6 +26,11 @@ type Client struct {
 	googleClient   *GClient
 	cfg            config.ServerConfig
 
+	// appTransport is set when the client authenticates as a GitHub App and is
+	// used by GetAuthHeaders to mint a current installation token. nil for PAT
+	// auth, where cfg.VcsToken is used directly.
+	appTransport *ghinstallation.Transport
+
 	// archiveRetry overrides retry parameters for DownloadArchive. Zero value uses defaults.
 	archiveRetry retryConfig
 
@@ -50,7 +55,7 @@ func CreateGithubClient(ctx context.Context, cfg config.ServerConfig) (*Client, 
 		shurcoolClient *githubv4.Client
 	)
 
-	githubClient, err := createHttpClient(ctx, cfg)
+	githubClient, appTransport, err := createHttpClient(ctx, cfg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create github http client")
 	}
@@ -78,6 +83,7 @@ func CreateGithubClient(ctx context.Context, cfg config.ServerConfig) (*Client, 
 			Issues:       IssuesService{googleClient.Issues},
 		},
 		shurcoolClient: shurcoolClient,
+		appTransport:   appTransport,
 		username:       cfg.VcsUsername,
 		email:          cfg.VcsEmail,
 	}
@@ -105,17 +111,21 @@ func CreateGithubClient(ctx context.Context, cfg config.ServerConfig) (*Client, 
 	return client, nil
 }
 
-func createHttpClient(ctx context.Context, cfg config.ServerConfig) (*http.Client, error) {
+// createHttpClient builds the HTTP client used by the go-github library and,
+// when authenticating as a GitHub App, also returns the ghinstallation
+// transport so callers (e.g. GetAuthHeaders) can mint installation tokens for
+// out-of-band requests. The transport is nil for PAT auth.
+func createHttpClient(ctx context.Context, cfg config.ServerConfig) (*http.Client, *ghinstallation.Transport, error) {
 	// Initialize the GitHub client with app key if provided
 	if cfg.IsGithubApp() {
 		appTransport, err := ghinstallation.New(
 			http.DefaultTransport, cfg.GithubAppID, cfg.GithubInstallationID, []byte(cfg.GithubPrivateKey),
 		)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to create github app transport")
+			return nil, nil, errors.Wrap(err, "failed to create github app transport")
 		}
 
-		return &http.Client{Transport: appTransport}, nil
+		return &http.Client{Transport: appTransport}, appTransport, nil
 	}
 
 	// Initialize the GitHub client with access token if app key is not provided
@@ -125,10 +135,10 @@ func createHttpClient(ctx context.Context, cfg config.ServerConfig) (*http.Clien
 		ts := oauth2.StaticTokenSource(
 			&oauth2.Token{AccessToken: vcsToken},
 		)
-		return oauth2.NewClient(ctx, ts), nil
+		return oauth2.NewClient(ctx, ts), nil, nil
 	}
 
-	return nil, errors.New("Either GitHub token or GitHub App credentials (App ID, Installation ID, Private Key) must be set")
+	return nil, nil, errors.New("Either GitHub token or GitHub App credentials (App ID, Installation ID, Private Key) must be set")
 }
 
 func (c *Client) Username() string { return c.username }
@@ -145,12 +155,23 @@ func (c *Client) CloneUsername() string {
 	}
 }
 
-// GetAuthHeaders returns HTTP headers needed for authenticated archive downloads
+// GetAuthHeaders returns HTTP headers needed for authenticated archive downloads.
+// In GitHub App mode the helper mints a current installation token via the
+// ghinstallation transport (which caches and refreshes automatically), since
+// cfg.VcsToken is empty for App auth. In PAT mode it uses cfg.VcsToken directly.
 func (c *Client) GetAuthHeaders() map[string]string {
+	token := c.cfg.VcsToken
+	if c.appTransport != nil {
+		if t, err := c.appTransport.Token(context.Background()); err == nil {
+			token = t
+		} else {
+			log.Warn().Err(err).Msg("failed to mint github app installation token for archive download; falling back to empty VcsToken")
+		}
+	}
 	// GitHub accepts: Authorization: Bearer <token> or Authorization: token <token>
 	// Using Bearer format as it's the modern standard
 	return map[string]string{
-		"Authorization": fmt.Sprintf("Bearer %s", c.cfg.VcsToken),
+		"Authorization": fmt.Sprintf("Bearer %s", token),
 	}
 }
 
