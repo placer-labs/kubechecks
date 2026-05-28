@@ -6,8 +6,12 @@ import (
 	"fmt"
 
 	argogenerator "github.com/argoproj/argo-cd/v3/applicationset/generators"
+	"github.com/argoproj/argo-cd/v3/applicationset/services"
 	"github.com/argoproj/argo-cd/v3/applicationset/utils"
 	argov1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
+	"github.com/argoproj/argo-cd/v3/reposerver/apiclient"
+	"github.com/argoproj/argo-cd/v3/util/db"
+	argosettings "github.com/argoproj/argo-cd/v3/util/settings"
 	"github.com/zapier/kubechecks/pkg/container"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/client-go/kubernetes"
@@ -27,7 +31,8 @@ type AppsGenerator interface {
 
 func (c *gen) GenerateApplicationSetApps(ctx context.Context, appset argov1alpha1.ApplicationSet, ctr *container.Container) ([]argov1alpha1.Application, error) {
 
-	appSetGenerators := getGenerators(ctx, *ctr.KubeClientSet.ControllerClient(), ctr.KubeClientSet.ClientSet(), ctr.Config.ArgoCDNamespace)
+	repos := newRepoService(ctx, ctr)
+	appSetGenerators := getGenerators(ctx, *ctr.KubeClientSet.ControllerClient(), ctr.KubeClientSet.ClientSet(), ctr.Config.ArgoCDNamespace, repos)
 
 	apps, appsetReason, err := generateApplications(appset, appSetGenerators, *ctr.KubeClientSet.ControllerClient())
 	if err != nil {
@@ -39,17 +44,19 @@ func (c *gen) GenerateApplicationSetApps(ctx context.Context, appset argov1alpha
 
 // GetGenerators returns the generators that will be used to generate applications for the ApplicationSet
 //
-// only support List and Clusters generators
-func getGenerators(ctx context.Context, c client.Client, k8sClient kubernetes.Interface, namespace string) map[string]argogenerator.Generator {
+// supports List, Clusters, and Git generators (plus Matrix/Merge composition of those)
+func getGenerators(ctx context.Context, c client.Client, k8sClient kubernetes.Interface, namespace string, repos services.Repos) map[string]argogenerator.Generator {
 
 	terminalGenerators := map[string]argogenerator.Generator{
 		"List":     argogenerator.NewListGenerator(),
 		"Clusters": argogenerator.NewClusterGenerator(ctx, c, k8sClient, namespace),
+		"Git":      argogenerator.NewGitGenerator(repos, namespace),
 	}
 
 	nestedGenerators := map[string]argogenerator.Generator{
 		"List":     terminalGenerators["List"],
 		"Clusters": terminalGenerators["Clusters"],
+		"Git":      terminalGenerators["Git"],
 		"Matrix":   argogenerator.NewMatrixGenerator(terminalGenerators),
 		"Merge":    argogenerator.NewMergeGenerator(terminalGenerators),
 	}
@@ -57,10 +64,31 @@ func getGenerators(ctx context.Context, c client.Client, k8sClient kubernetes.In
 	topLevelGenerators := map[string]argogenerator.Generator{
 		"List":     terminalGenerators["List"],
 		"Clusters": terminalGenerators["Clusters"],
+		"Git":      terminalGenerators["Git"],
 		"Matrix":   argogenerator.NewMatrixGenerator(nestedGenerators),
 		"Merge":    argogenerator.NewMergeGenerator(nestedGenerators),
 	}
 	return topLevelGenerators
+}
+
+// newRepoService builds the services.Repos used by the Git generator. It talks
+// to argocd-repo-server over gRPC (kubechecks already does this for manifest
+// generation) and reads repository credentials from argocd Secrets/ConfigMaps
+// via the SettingsManager.
+func newRepoService(ctx context.Context, ctr *container.Container) services.Repos {
+	k8s := ctr.KubeClientSet.ClientSet()
+	ns := ctr.Config.ArgoCDNamespace
+	settingsMgr := argosettings.NewSettingsManager(ctx, k8s, ns)
+	argoDB := db.NewDB(ns, settingsMgr, k8s)
+	repoClientset := apiclient.NewRepoServerClientset(
+		ctr.Config.ArgoCDRepositoryEndpoint,
+		0,
+		apiclient.TLSConfiguration{
+			DisableTLS:       false,
+			StrictValidation: !ctr.Config.ArgoCDRepositoryInsecure,
+		},
+	)
+	return services.NewArgoCDService(argoDB, false, repoClientset, true)
 }
 
 // generateApplications generates applications from the ApplicationSet
