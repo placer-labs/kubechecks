@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/kubechecks/pkg"
 	"github.com/zapier/kubechecks/pkg/git"
@@ -203,9 +204,10 @@ func (d *AppSetDirectory) FindAppSetsBasedOnChangeList(changeList []string, repo
 		}
 
 		// File generators: match the changed file path directly against the
-		// glob.
+		// glob. Uses doublestar to match argo's globbing semantics, which
+		// include brace expansion (e.g. `{prod,staging}`) and `**`.
 		for pattern, appNames := range d.appSetFilePatterns {
-			ok, err := path.Match(pattern, cleanPath)
+			ok, err := doublestar.Match(pattern, cleanPath)
 			if err != nil || !ok {
 				continue
 			}
@@ -229,11 +231,12 @@ func (d *AppSetDirectory) FindAppSetsBasedOnChangeList(changeList []string, repo
 
 // anyParentMatches reports whether any directory along the parent chain of
 // filePath matches the glob pattern. Used to decide whether a changed file
-// lives inside a directory enumerated by a Git directory generator.
+// lives inside a directory enumerated by a Git directory generator. Uses
+// doublestar so that brace expansion and `**` work the same way argo does.
 func anyParentMatches(pattern, filePath string) bool {
 	dir := path.Dir(filePath)
 	for {
-		if ok, err := path.Match(pattern, dir); err == nil && ok {
+		if ok, err := doublestar.Match(pattern, dir); err == nil && ok {
 			return true
 		}
 		if dir == "." || dir == "/" {
