@@ -100,28 +100,35 @@ func (m *Message) isDeleted(app string) bool {
 }
 
 func (m *Message) AddNewApp(ctx context.Context, app string) {
-	if m.isDeleted(app) {
-		return
-	}
-
 	_, span := tracer.Start(ctx, "AddNewApp")
 	defer span.End()
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
+	// If another check marked this app as removed (e.g. a parent
+	// app-of-apps whose template no longer emits it), but we're now
+	// explicitly adding it for processing — typically because an AppSet
+	// recreates the same name at a new source path — the prior delete
+	// marker is stale. Clear it so this app's diff is not silently
+	// suppressed.
+	delete(m.deletedAppsSet, app)
+
 	m.apps[app] = new(AppResults)
 }
 
 func (m *Message) AddToAppMessage(ctx context.Context, app string, result Result) {
-	if m.isDeleted(app) {
-		return
-	}
-
 	_, span := tracer.Start(ctx, "AddToAppMessage")
 	defer span.End()
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
+	// Same rationale as AddNewApp: if a check has a real result for this
+	// app, an earlier "removed by parent" marker is stale.
+	delete(m.deletedAppsSet, app)
+
+	if _, ok := m.apps[app]; !ok {
+		m.apps[app] = new(AppResults)
+	}
 	m.apps[app].AddCheckResult(result)
 }
 
