@@ -21,6 +21,23 @@ type Result struct {
 	State             pkg.CommitState
 	Summary, Details  string
 	NoChangesDetected bool
+
+	// Sticky marks a result as structurally important — it must be rendered
+	// even if a sibling check on the same app reports NoChangesDetected
+	// (which would otherwise suppress the entire app section). Used by
+	// AppSet spec-diff findings: when an AppSet starts generating a new
+	// Application, that addition is real news even if the helm-render
+	// check on the same Application name finds the workloads unchanged.
+	Sticky bool
+}
+
+func hasSticky(rs []Result) bool {
+	for _, r := range rs {
+		if r.Sticky {
+			return true
+		}
+	}
+	return false
 }
 
 type AppResults struct {
@@ -258,7 +275,7 @@ func (m *Message) buildAppSections(appName string, results *AppResults, maxSecti
 		appState = pkg.WorstState(appState, check.State)
 	}
 
-	if noChangesDetected || len(checks) == 0 {
+	if (noChangesDetected && !hasSticky(results.results)) || len(checks) == 0 {
 		return nil
 	}
 
