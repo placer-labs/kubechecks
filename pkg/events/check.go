@@ -169,6 +169,19 @@ func (ce *CheckEvent) GenerateListOfAffectedApps(ctx context.Context, repo *git.
 			continue
 		}
 
+		// Also generate at base (AppSet's configured revision) so we can
+		// diff the per-Application spec produced by the AppSet across the
+		// PR and surface "added/removed/modified by AppSet" findings. PRs
+		// that add a values file for a new Application show up here even
+		// when the underlying helm-render diff is identical.
+		baseApps, baseErr := ce.generator.GenerateApplicationSetApps(ctx, appSet, &ce.ctr, generator.PRContext{})
+		if baseErr != nil {
+			ce.logger.Warn().Caller().Err(baseErr).Str("appset", appSet.Name).
+				Msg("could not generate base apps from appSet; spec diff will be skipped")
+		} else {
+			reportAppSetSpecDiff(ctx, ce.logger, ce.vcsNote, appSet.Name, apps, baseApps)
+		}
+
 		// Build a set of appset-generated app names for fast lookup.
 		generatedNames := make(map[string]struct{}, len(apps))
 		for _, a := range apps {
