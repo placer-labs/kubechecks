@@ -160,7 +160,10 @@ func (ce *CheckEvent) GenerateListOfAffectedApps(ctx context.Context, repo *git.
 		ce.logger.Error().Caller().Err(err).Msg("could not get list of affected apps and appsets")
 	}
 	for _, appSet := range ce.affectedItems.ApplicationSets {
-		apps, err := ce.generator.GenerateApplicationSetApps(ctx, appSet, &ce.ctr)
+		apps, err := ce.generator.GenerateApplicationSetApps(ctx, appSet, &ce.ctr, generator.PRContext{
+			RepoURL: ce.pullRequest.CloneURL,
+			HeadSHA: ce.pullRequest.SHA,
+		})
 		if err != nil {
 			ce.logger.Error().Caller().Err(err).Msg("could not generate apps from appSet")
 			continue

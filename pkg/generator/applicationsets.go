@@ -8,10 +8,13 @@ import (
 	argogenerator "github.com/argoproj/argo-cd/v3/applicationset/generators"
 	"github.com/argoproj/argo-cd/v3/applicationset/services"
 	"github.com/argoproj/argo-cd/v3/applicationset/utils"
+	"github.com/argoproj/argo-cd/v3/common"
 	argov1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/argoproj/argo-cd/v3/reposerver/apiclient"
 	"github.com/argoproj/argo-cd/v3/util/db"
 	argosettings "github.com/argoproj/argo-cd/v3/util/settings"
+	"github.com/rs/zerolog/log"
+	"github.com/zapier/kubechecks/pkg"
 	"github.com/zapier/kubechecks/pkg/container"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/client-go/kubernetes"
@@ -25,11 +28,28 @@ func New() AppsGenerator {
 type gen struct {
 }
 
-type AppsGenerator interface {
-	GenerateApplicationSetApps(ctx context.Context, appset argov1alpha1.ApplicationSet, ctr *container.Container) ([]argov1alpha1.Application, error)
+// PRContext describes the PR whose state the AppSet should be rendered
+// against. When non-empty, any Git generator on the AppSet whose RepoURL
+// canonicalizes to RepoURL has its Revision overridden to HeadSHA so the
+// generator sees files added/modified in the PR — including net-new files
+// that would create net-new AppSet-generated Applications.
+type PRContext struct {
+	RepoURL string
+	HeadSHA string
 }
 
-func (c *gen) GenerateApplicationSetApps(ctx context.Context, appset argov1alpha1.ApplicationSet, ctr *container.Container) ([]argov1alpha1.Application, error) {
+type AppsGenerator interface {
+	GenerateApplicationSetApps(ctx context.Context, appset argov1alpha1.ApplicationSet, ctr *container.Container, pr PRContext) ([]argov1alpha1.Application, error)
+}
+
+func (c *gen) GenerateApplicationSetApps(ctx context.Context, appset argov1alpha1.ApplicationSet, ctr *container.Container, pr PRContext) ([]argov1alpha1.Application, error) {
+
+	// Render against the PR HEAD instead of the AppSet's configured
+	// revision so that diffs include AppSet-generated Apps from net-new
+	// files in the PR.
+	if pr.HeadSHA != "" && pr.RepoURL != "" {
+		appset = overrideGitRevisionForPR(appset, pr.RepoURL, pr.HeadSHA)
+	}
 
 	repos := newRepoService(ctx, ctr)
 	appSetGenerators := getGenerators(ctx, *ctr.KubeClientSet.ControllerClient(), ctr.KubeClientSet.ClientSet(), ctr.Config.ArgoCDNamespace, repos)
@@ -40,6 +60,61 @@ func (c *gen) GenerateApplicationSetApps(ctx context.Context, appset argov1alpha
 		return nil, fmt.Errorf("error generating applications: %w", err)
 	}
 	return apps, nil
+}
+
+// overrideGitRevisionForPR returns a copy of appset with every Git
+// generator that targets prRepoURL pointed at prHeadSHA. It also stamps the
+// refresh annotation so argo's Git generator bypasses the revision cache
+// (otherwise argocd-repo-server would happily serve a cached ls-tree for
+// the SHA — fine — but the cache lifetime can mask brand-new SHAs during
+// race conditions).
+func overrideGitRevisionForPR(appset argov1alpha1.ApplicationSet, prRepoURL, prHeadSHA string) argov1alpha1.ApplicationSet {
+	out := *appset.DeepCopy()
+	matched := false
+	for i := range out.Spec.Generators {
+		gen := &out.Spec.Generators[i]
+		if pointGitToPR(gen.Git, prRepoURL, prHeadSHA) {
+			matched = true
+		}
+		if gen.Matrix != nil {
+			for j := range gen.Matrix.Generators {
+				if pointGitToPR(gen.Matrix.Generators[j].Git, prRepoURL, prHeadSHA) {
+					matched = true
+				}
+			}
+		}
+		if gen.Merge != nil {
+			for j := range gen.Merge.Generators {
+				if pointGitToPR(gen.Merge.Generators[j].Git, prRepoURL, prHeadSHA) {
+					matched = true
+				}
+			}
+		}
+	}
+	if matched {
+		if out.Annotations == nil {
+			out.Annotations = map[string]string{}
+		}
+		out.Annotations[common.AnnotationApplicationSetRefresh] = "true"
+		log.Debug().
+			Str("appset", out.Name).
+			Str("revision", prHeadSHA).
+			Msg("overriding Git generator revision to PR HEAD")
+	}
+	return out
+}
+
+// pointGitToPR redirects a Git generator at prHeadSHA when its RepoURL
+// matches prRepoURL. Returns true if the generator was modified.
+func pointGitToPR(g *argov1alpha1.GitGenerator, prRepoURL, prHeadSHA string) bool {
+	if g == nil || g.RepoURL == "" {
+		return false
+	}
+	if !pkg.AreSameRepos(g.RepoURL, prRepoURL) {
+		return false
+	}
+	g.Revision = prHeadSHA
+	return true
 }
 
 // GetGenerators returns the generators that will be used to generate applications for the ApplicationSet
