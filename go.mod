@@ -11,6 +11,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/eks v1.66.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.38.0
 	github.com/aws/smithy-go v1.24.2
+	github.com/bmatcuk/doublestar/v4 v4.9.1
 	github.com/bradleyfalzon/ghinstallation/v2 v2.16.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/chainguard-dev/git-urls v1.0.2
@@ -125,7 +126,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/go-netrc v0.0.0-20140422174119-9fd32a8b3d3d // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
-	github.com/bmatcuk/doublestar/v4 v4.9.1 // indirect
 	github.com/bombsimon/logrusr/v4 v4.1.0 // indirect
 	github.com/bufbuild/protocompile v0.6.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
