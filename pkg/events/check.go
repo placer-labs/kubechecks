@@ -55,7 +55,8 @@ type CheckEvent struct {
 	fileList    []string // What files have changed in this PR/MR
 	pullRequest vcs.PullRequest
 	logger      zerolog.Logger
-	vcsNote     *msg.Message
+	vcsNote            *msg.Message
+	appSetSpecFindings []appSetSpecFinding
 	aiNote      *msg.Message // separate comment for AI review
 
 	affectedItems affected_apps.AffectedItems
@@ -179,7 +180,10 @@ func (ce *CheckEvent) GenerateListOfAffectedApps(ctx context.Context, repo *git.
 			ce.logger.Warn().Caller().Err(baseErr).Str("appset", appSet.Name).
 				Msg("could not generate base apps from appSet; spec diff will be skipped")
 		} else {
-			reportAppSetSpecDiff(ctx, ce.logger, ce.vcsNote, appSet.Name, apps, baseApps)
+			// vcsNote is created later in Process; stash findings and flush
+			// once the note exists.
+			ce.appSetSpecFindings = append(ce.appSetSpecFindings,
+				computeAppSetSpecDiff(ce.logger, appSet.Name, apps, baseApps)...)
 		}
 
 		// Build a set of appset-generated app names for fast lookup.
@@ -381,6 +385,10 @@ func (ce *CheckEvent) Process(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to create note")
 	}
+
+	// Flush any AppSet spec-diff findings collected during
+	// GenerateListOfAffectedApps now that vcsNote exists.
+	flushAppSetSpecFindings(ctx, ce.vcsNote, ce.appSetSpecFindings)
 
 	// Create a separate placeholder comment for AI review
 	if ce.ctr.Config.EnableAIReview {
