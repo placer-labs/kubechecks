@@ -209,5 +209,9 @@ func attachAppSetResult(
 		State:   state,
 		Summary: fmt.Sprintf("%s `%s`", action, appSetName),
 		Details: body,
+		// Bypass the "any NoChangesDetected sibling suppresses the whole
+		// app section" filter — AppSet structural changes are real news
+		// even when the workload diff happens to be identical.
+		Sticky: true,
 	})
 }
