@@ -14,10 +14,20 @@ import (
 	"github.com/zapier/kubechecks/pkg/msg"
 )
 
-// reportAppSetSpecDiff compares the Applications an AppSet would generate at
+// appSetSpecFinding describes a per-Application change introduced by an
+// AppSet between the PR base and head. Collected during AppSet processing
+// and flushed into vcsNote once that note exists.
+type appSetSpecFinding struct {
+	AppName    string
+	AppSetName string
+	Action     string // "added by AppSet", "removed by AppSet", "modified by AppSet"
+	Body       string // rendered markdown details (code-fenced YAML or diff)
+	State      pkg.CommitState
+}
+
+// computeAppSetSpecDiff compares the Applications an AppSet would generate at
 // the PR HEAD against the Applications it would generate at the AppSet's
-// configured revision (base). It attaches a check result describing the
-// difference per Application name, so reviewers see:
+// configured revision (base) and returns one finding per affected name:
 //
 //   - "added by AppSet": the AppSet starts generating this Application from
 //     this PR — typically because the PR adds a values/variants file the Git
@@ -32,21 +42,26 @@ import (
 // same name at a new source path) show only the parent's "removed" diff
 // and the helm-render check reports "no changes" — the AppSet's addition
 // is invisible.
-func reportAppSetSpecDiff(
-	ctx context.Context,
+func computeAppSetSpecDiff(
 	logger zerolog.Logger,
-	vcsNote *msg.Message,
 	appSetName string,
 	headApps, baseApps []v1alpha1.Application,
-) {
+) []appSetSpecFinding {
 	headByName := indexApps(headApps)
 	baseByName := indexApps(baseApps)
+
+	var out []appSetSpecFinding
 
 	for name, head := range headByName {
 		base, hadBefore := baseByName[name]
 		if !hadBefore {
-			attachAppSetResult(ctx, vcsNote, name, appSetName, "added by AppSet",
-				renderAppYAML(&head), pkg.StateSuccess)
+			out = append(out, appSetSpecFinding{
+				AppName:    name,
+				AppSetName: appSetName,
+				Action:     "added by AppSet",
+				Body:       renderAppYAML(&head),
+				State:      pkg.StateSuccess,
+			})
 			continue
 		}
 		diff, err := unifiedAppDiff(&base, &head)
@@ -57,16 +72,38 @@ func reportAppSetSpecDiff(
 		if diff == "" {
 			continue
 		}
-		attachAppSetResult(ctx, vcsNote, name, appSetName, "modified by AppSet",
-			diff, pkg.StateSuccess)
+		out = append(out, appSetSpecFinding{
+			AppName:    name,
+			AppSetName: appSetName,
+			Action:     "modified by AppSet",
+			Body:       diff,
+			State:      pkg.StateSuccess,
+		})
 	}
 
 	for name, base := range baseByName {
 		if _, stillThere := headByName[name]; stillThere {
 			continue
 		}
-		attachAppSetResult(ctx, vcsNote, name, appSetName, "removed by AppSet",
-			renderAppYAML(&base), pkg.StateSuccess)
+		out = append(out, appSetSpecFinding{
+			AppName:    name,
+			AppSetName: appSetName,
+			Action:     "removed by AppSet",
+			Body:       renderAppYAML(&base),
+			State:      pkg.StateSuccess,
+		})
+	}
+	return out
+}
+
+// flushAppSetSpecFindings dispatches collected findings into vcsNote. Safe to
+// call only after vcsNote is non-nil.
+func flushAppSetSpecFindings(ctx context.Context, vcsNote *msg.Message, findings []appSetSpecFinding) {
+	if vcsNote == nil {
+		return
+	}
+	for _, f := range findings {
+		attachAppSetResult(ctx, vcsNote, f.AppName, f.AppSetName, f.Action, f.Body, f.State)
 	}
 }
 
