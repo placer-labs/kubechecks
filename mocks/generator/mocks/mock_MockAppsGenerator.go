@@ -10,6 +10,7 @@ import (
 	"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	mock "github.com/stretchr/testify/mock"
 	"github.com/zapier/kubechecks/pkg/container"
+	generatorpkg "github.com/zapier/kubechecks/pkg/generator"
 )
 
 // NewMockAppsGenerator creates a new instance of MockAppsGenerator. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -40,8 +41,8 @@ func (_m *MockAppsGenerator) EXPECT() *MockAppsGenerator_Expecter {
 }
 
 // GenerateApplicationSetApps provides a mock function for the type MockAppsGenerator
-func (_mock *MockAppsGenerator) GenerateApplicationSetApps(ctx context.Context, appset v1alpha1.ApplicationSet, ctr *container.Container) ([]v1alpha1.Application, error) {
-	ret := _mock.Called(ctx, appset, ctr)
+func (_mock *MockAppsGenerator) GenerateApplicationSetApps(ctx context.Context, appset v1alpha1.ApplicationSet, ctr *container.Container, pr generatorpkg.PRContext) ([]v1alpha1.Application, error) {
+	ret := _mock.Called(ctx, appset, ctr, pr)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GenerateApplicationSetApps")
@@ -49,18 +50,18 @@ func (_mock *MockAppsGenerator) GenerateApplicationSetApps(ctx context.Context, 
 
 	var r0 []v1alpha1.Application
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, v1alpha1.ApplicationSet, *container.Container) ([]v1alpha1.Application, error)); ok {
-		return returnFunc(ctx, appset, ctr)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, v1alpha1.ApplicationSet, *container.Container, generatorpkg.PRContext) ([]v1alpha1.Application, error)); ok {
+		return returnFunc(ctx, appset, ctr, pr)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, v1alpha1.ApplicationSet, *container.Container) []v1alpha1.Application); ok {
-		r0 = returnFunc(ctx, appset, ctr)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, v1alpha1.ApplicationSet, *container.Container, generatorpkg.PRContext) []v1alpha1.Application); ok {
+		r0 = returnFunc(ctx, appset, ctr, pr)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]v1alpha1.Application)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, v1alpha1.ApplicationSet, *container.Container) error); ok {
-		r1 = returnFunc(ctx, appset, ctr)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, v1alpha1.ApplicationSet, *container.Container, generatorpkg.PRContext) error); ok {
+		r1 = returnFunc(ctx, appset, ctr, pr)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -76,11 +77,12 @@ type MockAppsGenerator_GenerateApplicationSetApps_Call struct {
 //   - ctx context.Context
 //   - appset v1alpha1.ApplicationSet
 //   - ctr *container.Container
-func (_e *MockAppsGenerator_Expecter) GenerateApplicationSetApps(ctx interface{}, appset interface{}, ctr interface{}) *MockAppsGenerator_GenerateApplicationSetApps_Call {
-	return &MockAppsGenerator_GenerateApplicationSetApps_Call{Call: _e.mock.On("GenerateApplicationSetApps", ctx, appset, ctr)}
+//   - pr generatorpkg.PRContext
+func (_e *MockAppsGenerator_Expecter) GenerateApplicationSetApps(ctx interface{}, appset interface{}, ctr interface{}, pr interface{}) *MockAppsGenerator_GenerateApplicationSetApps_Call {
+	return &MockAppsGenerator_GenerateApplicationSetApps_Call{Call: _e.mock.On("GenerateApplicationSetApps", ctx, appset, ctr, pr)}
 }
 
-func (_c *MockAppsGenerator_GenerateApplicationSetApps_Call) Run(run func(ctx context.Context, appset v1alpha1.ApplicationSet, ctr *container.Container)) *MockAppsGenerator_GenerateApplicationSetApps_Call {
+func (_c *MockAppsGenerator_GenerateApplicationSetApps_Call) Run(run func(ctx context.Context, appset v1alpha1.ApplicationSet, ctr *container.Container, pr generatorpkg.PRContext)) *MockAppsGenerator_GenerateApplicationSetApps_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -94,10 +96,15 @@ func (_c *MockAppsGenerator_GenerateApplicationSetApps_Call) Run(run func(ctx co
 		if args[2] != nil {
 			arg2 = args[2].(*container.Container)
 		}
+		var arg3 generatorpkg.PRContext
+		if args[3] != nil {
+			arg3 = args[3].(generatorpkg.PRContext)
+		}
 		run(
 			arg0,
 			arg1,
 			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -108,7 +115,7 @@ func (_c *MockAppsGenerator_GenerateApplicationSetApps_Call) Return(applications
 	return _c
 }
 
-func (_c *MockAppsGenerator_GenerateApplicationSetApps_Call) RunAndReturn(run func(ctx context.Context, appset v1alpha1.ApplicationSet, ctr *container.Container) ([]v1alpha1.Application, error)) *MockAppsGenerator_GenerateApplicationSetApps_Call {
+func (_c *MockAppsGenerator_GenerateApplicationSetApps_Call) RunAndReturn(run func(ctx context.Context, appset v1alpha1.ApplicationSet, ctr *container.Container, pr generatorpkg.PRContext) ([]v1alpha1.Application, error)) *MockAppsGenerator_GenerateApplicationSetApps_Call {
 	_c.Call.Return(run)
 	return _c
 }

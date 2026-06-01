@@ -439,7 +439,7 @@ func MockMatcher(methodName string, returns []interface{}) affected_apps.Matcher
 
 func MockGenerator(methodName string, returns []interface{}) generator.AppsGenerator {
 	mockClient := new(generatorsmocks.MockAppsGenerator)
-	mockClient.On(methodName, mock.Anything, mock.Anything, mock.Anything).Return(returns...)
+	mockClient.On(methodName, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(returns...)
 
 	return mockClient
 }
