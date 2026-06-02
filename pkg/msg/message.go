@@ -113,7 +113,14 @@ func (m *Message) AddNewApp(ctx context.Context, app string) {
 	// suppressed.
 	delete(m.deletedAppsSet, app)
 
-	m.apps[app] = new(AppResults)
+	// Don't clobber an existing entry. AppSet spec-diff findings are
+	// attached via AddNewApp/AddToAppMessage early in Process; later, the
+	// worker pipeline calls AddNewApp again for the same app before
+	// running its own checks. Re-initializing would erase the earlier
+	// findings.
+	if _, ok := m.apps[app]; !ok {
+		m.apps[app] = new(AppResults)
+	}
 }
 
 func (m *Message) AddToAppMessage(ctx context.Context, app string, result Result) {
