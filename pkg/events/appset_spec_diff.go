@@ -6,11 +6,12 @@ import (
 	"strings"
 
 	"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
-	"github.com/pmezard/go-difflib/difflib"
 	"github.com/rs/zerolog"
-	"sigs.k8s.io/yaml"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/zapier/kubechecks/pkg"
+	checksdiff "github.com/zapier/kubechecks/pkg/checks/diff"
 	"github.com/zapier/kubechecks/pkg/msg"
 )
 
@@ -125,82 +126,53 @@ func indexApps(apps []v1alpha1.Application) map[string]v1alpha1.Application {
 	return out
 }
 
-// comparableApp is the subset of an Application that's meaningful to compare
-// across AppSet generations. Everything else (status, managed fields, etc.)
-// is reconciler state and would only add noise.
-type comparableApp struct {
-	Name        string                          `json:"name"`
-	Namespace   string                          `json:"namespace,omitempty"`
-	Annotations map[string]string               `json:"annotations,omitempty"`
-	Labels      map[string]string               `json:"labels,omitempty"`
-	Spec        v1alpha1.ApplicationSpec        `json:"spec"`
-	Operation   *v1alpha1.Operation             `json:"operation,omitempty"`
-}
-
-func toComparable(app *v1alpha1.Application) comparableApp {
-	return comparableApp{
-		Name:        app.Name,
-		Namespace:   app.Namespace,
-		Annotations: app.Annotations,
-		Labels:      app.Labels,
-		Spec:        app.Spec,
+// appToUnstructured converts a freshly-generated AppSet Application to the
+// Unstructured form that pkg/checks/diff.PrintDiff consumes. Returns nil for
+// a nil input so PrintDiff renders pure additions/removals correctly. Strips
+// reconciler-only state that would only ever be noise when comparing two
+// generator outputs (neither side has been reconciled yet, but be defensive).
+func appToUnstructured(app *v1alpha1.Application) (*unstructured.Unstructured, error) {
+	if app == nil {
+		return nil, nil
 	}
+	clean := app.DeepCopy()
+	clean.Status = v1alpha1.ApplicationStatus{}
+	clean.ManagedFields = nil
+	clean.ResourceVersion = ""
+	clean.UID = ""
+	clean.Generation = 0
+	clean.CreationTimestamp.Time = clean.CreationTimestamp.Time.Truncate(0)
+
+	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(clean)
+	if err != nil {
+		return nil, err
+	}
+	return &unstructured.Unstructured{Object: raw}, nil
 }
 
 // unifiedAppDiff produces a markdown ```diff``` block comparing two
 // Applications. Passing nil for base renders an "addition" (all lines
 // prefixed with `+`); passing nil for head renders a "removal" (all lines
-// prefixed with `-`). The format matches kubechecks's existing resource
-// diffs so GitHub colours it red/green.
+// prefixed with `-`). Reuses pkg/checks/diff.PrintDiff so the rendering
+// matches kubechecks's existing resource diffs.
 func unifiedAppDiff(base, head *v1alpha1.Application) (string, error) {
-	var aLines, bLines []string
-	headerA, headerB := "/dev/null", "/dev/null"
-
-	if base != nil {
-		s, err := yaml.Marshal(toComparable(base))
-		if err != nil {
-			return "", err
-		}
-		aLines = difflib.SplitLines(string(s))
-		headerA = "Application " + base.Name + " (base)"
+	live, err := appToUnstructured(base)
+	if err != nil {
+		return "", err
 	}
-	if head != nil {
-		s, err := yaml.Marshal(toComparable(head))
-		if err != nil {
-			return "", err
-		}
-		bLines = difflib.SplitLines(string(s))
-		headerB = "Application " + head.Name + " (head)"
-	}
-	if equalLines(aLines, bLines) {
-		return "", nil
+	target, err := appToUnstructured(head)
+	if err != nil {
+		return "", err
 	}
 
 	var buf strings.Builder
-	// Use a huge context window so additions/removals show every line —
-	// for the "added"/"removed" cases there is no "context" to elide.
-	if err := difflib.WriteUnifiedDiff(&buf, difflib.UnifiedDiff{
-		A:        aLines,
-		B:        bLines,
-		FromFile: headerA,
-		ToFile:   headerB,
-		Context:  len(aLines) + len(bLines) + 1,
-	}); err != nil {
+	if err := checksdiff.PrintDiff(&buf, live, target); err != nil {
 		return "", err
 	}
+	if buf.Len() == 0 {
+		return "", nil
+	}
 	return fmt.Sprintf("```diff\n%s```", buf.String()), nil
-}
-
-func equalLines(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func attachAppSetResult(
