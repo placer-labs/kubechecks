@@ -55,28 +55,33 @@ func computeAppSetSpecDiff(
 	for name, head := range headByName {
 		base, hadBefore := baseByName[name]
 		if !hadBefore {
+			body, err := unifiedAppDiff(nil, &head)
+			if err != nil {
+				logger.Warn().Err(err).Str("app", name).Msg("failed to render added-by-appset diff")
+				continue
+			}
 			out = append(out, appSetSpecFinding{
 				AppName:    name,
 				AppSetName: appSetName,
 				Action:     "added by AppSet",
-				Body:       renderAppYAML(&head),
+				Body:       body,
 				State:      pkg.StateSuccess,
 			})
 			continue
 		}
-		diff, err := unifiedAppDiff(&base, &head)
+		body, err := unifiedAppDiff(&base, &head)
 		if err != nil {
 			logger.Warn().Err(err).Str("app", name).Msg("failed to compute appset spec diff")
 			continue
 		}
-		if diff == "" {
+		if body == "" {
 			continue
 		}
 		out = append(out, appSetSpecFinding{
 			AppName:    name,
 			AppSetName: appSetName,
 			Action:     "modified by AppSet",
-			Body:       diff,
+			Body:       body,
 			State:      pkg.StateSuccess,
 		})
 	}
@@ -85,11 +90,16 @@ func computeAppSetSpecDiff(
 		if _, stillThere := headByName[name]; stillThere {
 			continue
 		}
+		body, err := unifiedAppDiff(&base, nil)
+		if err != nil {
+			logger.Warn().Err(err).Str("app", name).Msg("failed to render removed-by-appset diff")
+			continue
+		}
 		out = append(out, appSetSpecFinding{
 			AppName:    name,
 			AppSetName: appSetName,
 			Action:     "removed by AppSet",
-			Body:       renderAppYAML(&base),
+			Body:       body,
 			State:      pkg.StateSuccess,
 		})
 	}
@@ -137,39 +147,60 @@ func toComparable(app *v1alpha1.Application) comparableApp {
 	}
 }
 
-func renderAppYAML(app *v1alpha1.Application) string {
-	c := toComparable(app)
-	b, err := yaml.Marshal(c)
-	if err != nil {
-		return fmt.Sprintf("# failed to marshal Application %s: %v", app.Name, err)
-	}
-	return fmt.Sprintf("```yaml\n%s```", string(b))
-}
-
+// unifiedAppDiff produces a markdown ```diff``` block comparing two
+// Applications. Passing nil for base renders an "addition" (all lines
+// prefixed with `+`); passing nil for head renders a "removal" (all lines
+// prefixed with `-`). The format matches kubechecks's existing resource
+// diffs so GitHub colours it red/green.
 func unifiedAppDiff(base, head *v1alpha1.Application) (string, error) {
-	a, err := yaml.Marshal(toComparable(base))
-	if err != nil {
-		return "", err
+	var aLines, bLines []string
+	headerA, headerB := "/dev/null", "/dev/null"
+
+	if base != nil {
+		s, err := yaml.Marshal(toComparable(base))
+		if err != nil {
+			return "", err
+		}
+		aLines = difflib.SplitLines(string(s))
+		headerA = "Application " + base.Name + " (base)"
 	}
-	b, err := yaml.Marshal(toComparable(head))
-	if err != nil {
-		return "", err
+	if head != nil {
+		s, err := yaml.Marshal(toComparable(head))
+		if err != nil {
+			return "", err
+		}
+		bLines = difflib.SplitLines(string(s))
+		headerB = "Application " + head.Name + " (head)"
 	}
-	if string(a) == string(b) {
+	if equalLines(aLines, bLines) {
 		return "", nil
 	}
+
 	var buf strings.Builder
-	err = difflib.WriteUnifiedDiff(&buf, difflib.UnifiedDiff{
-		A:        difflib.SplitLines(string(a)),
-		B:        difflib.SplitLines(string(b)),
-		FromFile: "base",
-		ToFile:   "head",
-		Context:  2,
-	})
-	if err != nil {
+	// Use a huge context window so additions/removals show every line —
+	// for the "added"/"removed" cases there is no "context" to elide.
+	if err := difflib.WriteUnifiedDiff(&buf, difflib.UnifiedDiff{
+		A:        aLines,
+		B:        bLines,
+		FromFile: headerA,
+		ToFile:   headerB,
+		Context:  len(aLines) + len(bLines) + 1,
+	}); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("```diff\n%s```", buf.String()), nil
+}
+
+func equalLines(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func attachAppSetResult(
