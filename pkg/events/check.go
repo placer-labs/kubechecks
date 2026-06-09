@@ -202,7 +202,16 @@ func (ce *CheckEvent) GenerateListOfAffectedApps(ctx context.Context, repo *git.
 			}
 			filtered = append(filtered, existing)
 		}
-		ce.affectedItems.Applications = append(filtered, apps...)
+
+		// Limit the AppSet-generated apps we queue to those whose source
+		// paths actually overlap with the PR's changed files. Without this
+		// filter, a PR that touches the AppSet's own config (e.g. an
+		// argocd-infra-prod values.yaml that hosts the AppSet) would queue
+		// every app the AppSet generates (hundreds), since the matcher
+		// flagged the AppSet itself as affected. Structural changes to the
+		// AppSet still surface via the spec-diff findings collected above.
+		queued := filterAppsByChangeList(apps, ce.fileList, ce.pullRequest.BaseRef, ce.logger)
+		ce.affectedItems.Applications = append(filtered, queued...)
 	}
 
 	span.SetAttributes(

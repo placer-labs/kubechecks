@@ -11,9 +11,32 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/zapier/kubechecks/pkg"
+	"github.com/zapier/kubechecks/pkg/appdir"
 	checksdiff "github.com/zapier/kubechecks/pkg/checks/diff"
 	"github.com/zapier/kubechecks/pkg/msg"
 )
+
+// filterAppsByChangeList narrows a slice of AppSet-generated Applications
+// to those whose source paths (and helm valueFiles / fileParameters) actually
+// overlap with the PR's changed files. Reuses appdir.AppDirectory so the
+// prefix/file matching is identical to what kubechecks does for plain
+// Applications. Without this, a PR touching the AppSet's own config (the
+// AppSet manifest's values.yaml) would queue every Application the AppSet
+// generates — often hundreds — because the matcher flagged the AppSet as
+// affected. Structural AppSet changes still surface via the spec-diff
+// findings emitted alongside.
+func filterAppsByChangeList(apps []v1alpha1.Application, changeList []string, targetBranch string, logger zerolog.Logger) []v1alpha1.Application {
+	dir := appdir.NewAppDirectory()
+	for _, app := range apps {
+		dir.AddApp(app)
+	}
+	matched := dir.FindAppsBasedOnChangeList(changeList, targetBranch)
+	logger.Info().
+		Int("generated", len(apps)).
+		Int("queued", len(matched)).
+		Msg("filtered AppSet-generated apps by changed files")
+	return matched
+}
 
 // appSetSpecFinding describes a per-Application change introduced by an
 // AppSet between the PR base and head. Collected during AppSet processing
