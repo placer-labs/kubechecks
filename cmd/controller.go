@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -46,14 +47,16 @@ var ControllerCmd = &cobra.Command{
 		}
 
 		// watch app modifications, if necessary
+		var appWatcher *app_watcher.ApplicationWatcher
+		var appSetWatcher *app_watcher.ApplicationSetWatcher
 		if cfg.MonitorAllApplications {
-			appWatcher, err := app_watcher.NewApplicationWatcher(ctr, ctx)
+			appWatcher, err = app_watcher.NewApplicationWatcher(ctr, ctx)
 			if err != nil {
 				log.Fatal().Err(err).Msg("failed to create watch applications")
 			}
 			go appWatcher.Run(ctx, 1)
 
-			appSetWatcher, err := app_watcher.NewApplicationSetWatcher(ctr, ctx)
+			appSetWatcher, err = app_watcher.NewApplicationSetWatcher(ctr, ctx)
 			if err != nil {
 				log.Fatal().Err(err).Msg("failed to create watch application sets")
 			}
@@ -88,6 +91,28 @@ var ControllerCmd = &cobra.Command{
 
 		// Create server
 		srv := server.NewServer(ctr, processors, aiReviewChecker)
+
+		// Gate /ready on the informer caches being synced. Until the
+		// app/appset watchers have completed their initial list, a webhook
+		// hitting this pod would see an empty VcsToArgoMap and silently
+		// match no apps. With this check, kubelet keeps the pod out of
+		// the Service endpoint set until it can actually do useful work.
+		if appWatcher != nil {
+			srv.AddReadinessCheck("application-informer-synced", func() error {
+				if !appWatcher.HasSynced() {
+					return fmt.Errorf("application informer not yet synced")
+				}
+				return nil
+			})
+		}
+		if appSetWatcher != nil {
+			srv.AddReadinessCheck("applicationset-informer-synced", func() error {
+				if !appSetWatcher.HasSynced() {
+					return fmt.Errorf("applicationset informer not yet synced")
+				}
+				return nil
+			})
+		}
 
 		// Start HTTP server in background
 		log.Info().Msg("starting web server")

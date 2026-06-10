@@ -23,12 +23,23 @@ import (
 
 const KubeChecksHooksPathPrefix = "/hooks"
 
+// ReadinessCheck returns nil when the component it guards is ready to
+// serve traffic. Used to gate the HTTP /ready probe so a freshly-started
+// pod is not added to the Service before its informer caches have synced —
+// otherwise webhook traffic would hit a pod that sees an empty
+// VcsToArgoMap and silently match no apps.
+type ReadinessCheck struct {
+	Name  string
+	Check func() error
+}
+
 type Server struct {
-	ctr             container.Container
-	processors      []checks.ProcessorEntry
-	aiReviewChecker queue.AIReviewChecker
-	queueManager    *queue.QueueManager
-	echo            *echo.Echo
+	ctr              container.Container
+	processors       []checks.ProcessorEntry
+	aiReviewChecker  queue.AIReviewChecker
+	queueManager     *queue.QueueManager
+	echo             *echo.Echo
+	readinessChecks  []ReadinessCheck
 }
 
 func NewServer(ctr container.Container, processors []checks.ProcessorEntry, aiReviewChecker queue.AIReviewChecker) *Server {
@@ -53,6 +64,13 @@ func NewServer(ctr container.Container, processors []checks.ProcessorEntry, aiRe
 		aiReviewChecker: aiReviewChecker,
 		queueManager:    queueManager,
 	}
+}
+
+// AddReadinessCheck registers a readiness check. Probes registered here
+// gate /ready: kubelet keeps the pod out of the Service until every check
+// returns nil.
+func (s *Server) AddReadinessCheck(name string, check func() error) {
+	s.readinessChecks = append(s.readinessChecks, ReadinessCheck{Name: name, Check: check})
 }
 
 // Shutdown gracefully shuts down the HTTP server and queue workers
@@ -99,6 +117,10 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// add routes
 	health := healthcheck.NewHandler()
+	for _, rc := range s.readinessChecks {
+		check := rc.Check
+		health.AddReadinessCheck(rc.Name, check)
+	}
 	s.echo.GET("/ready", echo.WrapHandler(health))
 	s.echo.GET("/live", echo.WrapHandler(health))
 	s.echo.GET("/metrics", echoprometheus.NewHandler())
