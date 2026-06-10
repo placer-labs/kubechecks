@@ -105,6 +105,17 @@ func (m *Message) RemoveApp(app string) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
+	// If the app already carries a Sticky result (e.g. an AppSet's
+	// "added/removed/modified" structural finding), refuse to mark it as
+	// deleted. RemoveApp is called by the helm-render diff of a parent
+	// app-of-apps when one of its templated children disappears at HEAD;
+	// during a handover PR that child is being recreated by an AppSet,
+	// and the Sticky finding is the canonical signal. Letting the
+	// parent's delete marker win silently drops the section in
+	// BuildComment.
+	if results, ok := m.apps[app]; ok && hasSticky(results.results) {
+		return
+	}
 	m.deletedAppsSet[app] = struct{}{}
 }
 
