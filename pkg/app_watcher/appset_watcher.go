@@ -47,6 +47,15 @@ func NewApplicationSetWatcher(ctr container.Container, ctx context.Context) (*Ap
 	return &ctrl, nil
 }
 
+// HasSynced reports whether the underlying informer has completed its
+// initial list. Used by the HTTP readiness probe.
+func (ctrl *ApplicationSetWatcher) HasSynced() bool {
+	if ctrl == nil || ctrl.appInformer == nil {
+		return false
+	}
+	return ctrl.appInformer.HasSynced()
+}
+
 // Run starts the Application CRD controller.
 func (ctrl *ApplicationSetWatcher) Run(ctx context.Context) {
 	log.Info().Msg("starting ApplicationSet Controller")
