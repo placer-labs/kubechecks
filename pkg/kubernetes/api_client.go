@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"log/slog"
 
+	argov1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	controllerClient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -67,7 +70,20 @@ func New(input *NewClientInput, opts ...NewClientOption) (Interface, error) {
 	if err != nil {
 		return nil, err
 	}
-	contClient, err := controllerClient.New(input.restConfig, controllerClient.Options{})
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("failed to register client-go scheme: %w", err)
+	}
+	// Register argo Application/ApplicationSet/AppProject so the
+	// controller-runtime client can resolve them. Argo's Git generator
+	// looks up AppProject when an AppSet's spec.project is a literal value
+	// (not a `{{ … }}` template); without this registration the lookup
+	// fails with "no kind is registered for the type v1alpha1.AppProject"
+	// and the AppSet skips generation entirely.
+	if err := argov1alpha1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("failed to register argo v1alpha1 scheme: %w", err)
+	}
+	contClient, err := controllerClient.New(input.restConfig, controllerClient.Options{Scheme: scheme})
 	if err != nil {
 		return nil, err
 	}

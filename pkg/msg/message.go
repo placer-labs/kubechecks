@@ -21,6 +21,23 @@ type Result struct {
 	State             pkg.CommitState
 	Summary, Details  string
 	NoChangesDetected bool
+
+	// Sticky marks a result as structurally important — it must be rendered
+	// even if a sibling check on the same app reports NoChangesDetected
+	// (which would otherwise suppress the entire app section). Used by
+	// AppSet spec-diff findings: when an AppSet starts generating a new
+	// Application, that addition is real news even if the helm-render
+	// check on the same Application name finds the workloads unchanged.
+	Sticky bool
+}
+
+func hasSticky(rs []Result) bool {
+	for _, r := range rs {
+		if r.Sticky {
+			return true
+		}
+	}
+	return false
 }
 
 type AppResults struct {
@@ -88,6 +105,17 @@ func (m *Message) RemoveApp(app string) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
+	// If the app already carries a Sticky result (e.g. an AppSet's
+	// "added/removed/modified" structural finding), refuse to mark it as
+	// deleted. RemoveApp is called by the helm-render diff of a parent
+	// app-of-apps when one of its templated children disappears at HEAD;
+	// during a handover PR that child is being recreated by an AppSet,
+	// and the Sticky finding is the canonical signal. Letting the
+	// parent's delete marker win silently drops the section in
+	// BuildComment.
+	if results, ok := m.apps[app]; ok && hasSticky(results.results) {
+		return
+	}
 	m.deletedAppsSet[app] = struct{}{}
 }
 
@@ -100,28 +128,42 @@ func (m *Message) isDeleted(app string) bool {
 }
 
 func (m *Message) AddNewApp(ctx context.Context, app string) {
-	if m.isDeleted(app) {
-		return
-	}
-
 	_, span := tracer.Start(ctx, "AddNewApp")
 	defer span.End()
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
-	m.apps[app] = new(AppResults)
+	// If another check marked this app as removed (e.g. a parent
+	// app-of-apps whose template no longer emits it), but we're now
+	// explicitly adding it for processing — typically because an AppSet
+	// recreates the same name at a new source path — the prior delete
+	// marker is stale. Clear it so this app's diff is not silently
+	// suppressed.
+	delete(m.deletedAppsSet, app)
+
+	// Don't clobber an existing entry. AppSet spec-diff findings are
+	// attached via AddNewApp/AddToAppMessage early in Process; later, the
+	// worker pipeline calls AddNewApp again for the same app before
+	// running its own checks. Re-initializing would erase the earlier
+	// findings.
+	if _, ok := m.apps[app]; !ok {
+		m.apps[app] = new(AppResults)
+	}
 }
 
 func (m *Message) AddToAppMessage(ctx context.Context, app string, result Result) {
-	if m.isDeleted(app) {
-		return
-	}
-
 	_, span := tracer.Start(ctx, "AddToAppMessage")
 	defer span.End()
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
+	// Same rationale as AddNewApp: if a check has a real result for this
+	// app, an earlier "removed by parent" marker is stale.
+	delete(m.deletedAppsSet, app)
+
+	if _, ok := m.apps[app]; !ok {
+		m.apps[app] = new(AppResults)
+	}
 	m.apps[app].AddCheckResult(result)
 }
 
@@ -244,7 +286,7 @@ func (m *Message) buildAppSections(appName string, results *AppResults, maxSecti
 		appState = pkg.WorstState(appState, check.State)
 	}
 
-	if noChangesDetected || len(checks) == 0 {
+	if (noChangesDetected && !hasSticky(results.results)) || len(checks) == 0 {
 		return nil
 	}
 

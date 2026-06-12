@@ -54,6 +54,17 @@ func NewApplicationWatcher(ctr container.Container, ctx context.Context) (*Appli
 	return &ctrl, nil
 }
 
+// HasSynced reports whether the underlying informer has completed its
+// initial list. Until this returns true, VcsToArgoMap doesn't reflect the
+// real cluster state and webhook checks would silently miss apps. Used by
+// the HTTP readiness probe.
+func (ctrl *ApplicationWatcher) HasSynced() bool {
+	if ctrl == nil || ctrl.appInformer == nil {
+		return false
+	}
+	return ctrl.appInformer.HasSynced()
+}
+
 // Run starts the Application CRD controller.
 func (ctrl *ApplicationWatcher) Run(ctx context.Context, processors int) {
 	log.Info().Msg("starting Application Controller")

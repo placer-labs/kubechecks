@@ -55,7 +55,8 @@ type CheckEvent struct {
 	fileList    []string // What files have changed in this PR/MR
 	pullRequest vcs.PullRequest
 	logger      zerolog.Logger
-	vcsNote     *msg.Message
+	vcsNote            *msg.Message
+	appSetSpecFindings []appSetSpecFinding
 	aiNote      *msg.Message // separate comment for AI review
 
 	affectedItems affected_apps.AffectedItems
@@ -160,10 +161,29 @@ func (ce *CheckEvent) GenerateListOfAffectedApps(ctx context.Context, repo *git.
 		ce.logger.Error().Caller().Err(err).Msg("could not get list of affected apps and appsets")
 	}
 	for _, appSet := range ce.affectedItems.ApplicationSets {
-		apps, err := ce.generator.GenerateApplicationSetApps(ctx, appSet, &ce.ctr)
+		apps, err := ce.generator.GenerateApplicationSetApps(ctx, appSet, &ce.ctr, generator.PRContext{
+			RepoURL: ce.pullRequest.CloneURL,
+			HeadSHA: ce.pullRequest.SHA,
+		})
 		if err != nil {
 			ce.logger.Error().Caller().Err(err).Msg("could not generate apps from appSet")
 			continue
+		}
+
+		// Also generate at base (AppSet's configured revision) so we can
+		// diff the per-Application spec produced by the AppSet across the
+		// PR and surface "added/removed/modified by AppSet" findings. PRs
+		// that add a values file for a new Application show up here even
+		// when the underlying helm-render diff is identical.
+		baseApps, baseErr := ce.generator.GenerateApplicationSetApps(ctx, appSet, &ce.ctr, generator.PRContext{})
+		if baseErr != nil {
+			ce.logger.Warn().Caller().Err(baseErr).Str("appset", appSet.Name).
+				Msg("could not generate base apps from appSet; spec diff will be skipped")
+		} else {
+			// vcsNote is created later in Process; stash findings and flush
+			// once the note exists.
+			ce.appSetSpecFindings = append(ce.appSetSpecFindings,
+				computeAppSetSpecDiff(ce.logger, appSet.Name, apps, baseApps)...)
 		}
 
 		// Build a set of appset-generated app names for fast lookup.
@@ -182,7 +202,16 @@ func (ce *CheckEvent) GenerateListOfAffectedApps(ctx context.Context, repo *git.
 			}
 			filtered = append(filtered, existing)
 		}
-		ce.affectedItems.Applications = append(filtered, apps...)
+
+		// Limit the AppSet-generated apps we queue to those whose source
+		// paths actually overlap with the PR's changed files. Without this
+		// filter, a PR that touches the AppSet's own config (e.g. an
+		// argocd-infra-prod values.yaml that hosts the AppSet) would queue
+		// every app the AppSet generates (hundreds), since the matcher
+		// flagged the AppSet itself as affected. Structural changes to the
+		// AppSet still surface via the spec-diff findings collected above.
+		queued := filterAppsByChangeList(apps, ce.fileList, ce.pullRequest.BaseRef, ce.logger)
+		ce.affectedItems.Applications = append(filtered, queued...)
 	}
 
 	span.SetAttributes(
@@ -365,6 +394,10 @@ func (ce *CheckEvent) Process(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to create note")
 	}
+
+	// Flush any AppSet spec-diff findings collected during
+	// GenerateListOfAffectedApps now that vcsNote exists.
+	flushAppSetSpecFindings(ctx, ce.vcsNote, ce.appSetSpecFindings)
 
 	// Create a separate placeholder comment for AI review
 	if ce.ctr.Config.EnableAIReview {
