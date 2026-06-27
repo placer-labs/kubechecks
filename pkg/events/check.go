@@ -181,9 +181,12 @@ func (ce *CheckEvent) GenerateListOfAffectedApps(ctx context.Context, repo *git.
 				Msg("could not generate base apps from appSet; spec diff will be skipped")
 		} else {
 			// vcsNote is created later in Process; stash findings and flush
-			// once the note exists.
+			// once the note exists. Narrow the diff to apps the PR's changed
+			// files actually affect — otherwise a PR branch that is far behind
+			// the base branch floods the report with "removed by AppSet"
+			// findings for unrelated apps (see appSetSpecDiffForChange).
 			ce.appSetSpecFindings = append(ce.appSetSpecFindings,
-				computeAppSetSpecDiff(ce.logger, appSet.Name, apps, baseApps)...)
+				appSetSpecDiffForChange(ce.logger, appSet.Name, apps, baseApps, ce.fileList, ce.pullRequest.BaseRef)...)
 		}
 
 		// Build a set of appset-generated app names for fast lookup.

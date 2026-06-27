@@ -38,6 +38,32 @@ func filterAppsByChangeList(apps []v1alpha1.Application, changeList []string, ta
 	return matched
 }
 
+// appSetSpecDiffForChange computes AppSet spec-diff findings limited to the
+// Applications whose generation actually depends on the PR's changed files.
+//
+// computeAppSetSpecDiff compares the Applications an AppSet generates at the PR
+// HEAD against those it generates at the base. When the PR branch is far behind
+// the base branch, those two renders diverge by everything that changed on the
+// base branch — not just by the PR — so the raw diff floods with "removed by
+// AppSet" findings for hundreds of Applications the PR never touched (see
+// placer-engineering/be-k8s-deployments#3112). Narrowing both sides by the
+// change list with the same matcher used for queued apps (filterAppsByChangeList)
+// drops that noise while preserving the handover findings this exists for: a PR
+// that adds/removes/edits an Application's value files still changes those files,
+// so the affected Applications stay in the change list on whichever side
+// generates them.
+func appSetSpecDiffForChange(
+	logger zerolog.Logger,
+	appSetName string,
+	headApps, baseApps []v1alpha1.Application,
+	changeList []string,
+	targetBranch string,
+) []appSetSpecFinding {
+	headForDiff := filterAppsByChangeList(headApps, changeList, targetBranch, logger)
+	baseForDiff := filterAppsByChangeList(baseApps, changeList, targetBranch, logger)
+	return computeAppSetSpecDiff(logger, appSetName, headForDiff, baseForDiff)
+}
+
 // appSetSpecFinding describes a per-Application change introduced by an
 // AppSet between the PR base and head. Collected during AppSet processing
 // and flushed into vcsNote once that note exists.
