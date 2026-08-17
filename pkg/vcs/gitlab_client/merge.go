@@ -36,7 +36,7 @@ func (c *Client) GetMergeChanges(ctx context.Context, projectId int, mergeReqId 
 	}
 
 	for {
-		diffs, resp, err := c.c.MergeRequests.ListMergeRequestDiffs(projectId, mergeReqId, opts)
+		diffs, resp, err := c.c.MergeRequests.ListMergeRequestDiffs(projectId, int64(mergeReqId), opts)
 		if err != nil {
 			telemetry.SetError(span, err, "Get MergeRequest Changes")
 			return changes, err
@@ -65,10 +65,10 @@ func (c *Client) GetMergeChanges(ctx context.Context, projectId int, mergeReqId 
 }
 
 type MergeRequestsServices interface {
-	GetMergeRequestDiffVersions(pid interface{}, mergeRequest int, opt *gitlab.GetMergeRequestDiffVersionsOptions, options ...gitlab.RequestOptionFunc) ([]*gitlab.MergeRequestDiffVersion, *gitlab.Response, error)
-	ListMergeRequestDiffs(pid interface{}, mergeRequest int, opt *gitlab.ListMergeRequestDiffsOptions, options ...gitlab.RequestOptionFunc) ([]*gitlab.MergeRequestDiff, *gitlab.Response, error)
-	UpdateMergeRequest(pid interface{}, mergeRequest int, opt *gitlab.UpdateMergeRequestOptions, options ...gitlab.RequestOptionFunc) (*gitlab.MergeRequest, *gitlab.Response, error)
-	GetMergeRequest(pid interface{}, mergeRequest int, opt *gitlab.GetMergeRequestsOptions, options ...gitlab.RequestOptionFunc) (*gitlab.MergeRequest, *gitlab.Response, error)
+	GetMergeRequestDiffVersions(pid interface{}, mergeRequest int64, opt *gitlab.GetMergeRequestDiffVersionsOptions, options ...gitlab.RequestOptionFunc) ([]*gitlab.MergeRequestDiffVersion, *gitlab.Response, error)
+	ListMergeRequestDiffs(pid interface{}, mergeRequest int64, opt *gitlab.ListMergeRequestDiffsOptions, options ...gitlab.RequestOptionFunc) ([]*gitlab.MergeRequestDiff, *gitlab.Response, error)
+	UpdateMergeRequest(pid interface{}, mergeRequest int64, opt *gitlab.UpdateMergeRequestOptions, options ...gitlab.RequestOptionFunc) (*gitlab.MergeRequest, *gitlab.Response, error)
+	GetMergeRequest(pid interface{}, mergeRequest int64, opt *gitlab.GetMergeRequestsOptions, options ...gitlab.RequestOptionFunc) (*gitlab.MergeRequest, *gitlab.Response, error)
 }
 
 type MergeRequestsService struct {

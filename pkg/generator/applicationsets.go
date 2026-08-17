@@ -124,7 +124,7 @@ func getGenerators(ctx context.Context, c client.Client, k8sClient kubernetes.In
 
 	terminalGenerators := map[string]argogenerator.Generator{
 		"List":     argogenerator.NewListGenerator(),
-		"Clusters": argogenerator.NewClusterGenerator(ctx, c, k8sClient, namespace),
+		"Clusters": argogenerator.NewClusterGenerator(c, namespace),
 		"Git":      argogenerator.NewGitGenerator(repos, namespace),
 	}
 
