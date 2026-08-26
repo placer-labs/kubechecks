@@ -26,19 +26,22 @@ type GitCredsFunc func(ctx context.Context) (username, password string, err erro
 
 type ServerConfig struct {
 	// argocd
-	ArgoCDServerAddr         string `mapstructure:"argocd-api-server-addr"`
-	ArgoCDToken              string `mapstructure:"argocd-api-token"`
-	ArgoCDPathPrefix         string `mapstructure:"argocd-api-path-prefix"`
-	ArgoCDInsecure           bool   `mapstructure:"argocd-api-insecure"`
-	ArgoCDNamespace          string `mapstructure:"argocd-api-namespace"`
-	ArgoCDPlainText          bool   `mapstructure:"argocd-api-plaintext"`
-	ArgoCDRepositoryEndpoint string `mapstructure:"argocd-repository-endpoint"`
-	ArgoCDRepositoryInsecure bool   `mapstructure:"argocd-repository-insecure"`
-	ArgoCDSendFullRepository bool   `mapstructure:"argocd-send-full-repository"`
-	ArgoCDIncludeDotGit      bool   `mapstructure:"argocd-include-dot-git"`
-	KubernetesConfig         string `mapstructure:"kubernetes-config"`
-	KubernetesType           string `mapstructure:"kubernetes-type"`
-	KubernetesClusterID      string `mapstructure:"kubernetes-clusterid"`
+	ArgoCDServerAddr                string `mapstructure:"argocd-api-server-addr"`
+	ArgoCDToken                     string `mapstructure:"argocd-api-token"`
+	ArgoCDPathPrefix                string `mapstructure:"argocd-api-path-prefix"`
+	ArgoCDInsecure                  bool   `mapstructure:"argocd-api-insecure"`
+	ArgoCDNamespace                 string `mapstructure:"argocd-api-namespace"`
+	ArgoCDPlainText                 bool   `mapstructure:"argocd-api-plaintext"`
+	ArgoCDRepositoryEndpoint        string `mapstructure:"argocd-repository-endpoint"`
+	ArgoCDRepositoryInsecure        bool   `mapstructure:"argocd-repository-insecure"`
+	ArgoCDSendFullRepository        bool   `mapstructure:"argocd-send-full-repository"`
+	ArgoCDIncludeDotGit             bool   `mapstructure:"argocd-include-dot-git"`
+	ArgoCDServerSideDiff            bool   `mapstructure:"argocd-server-side-diff"`
+	ArgoCDServerSideDiffConcurrency int64  `mapstructure:"argocd-server-side-diff-concurrency"`
+	ArgoCDServerSideDiffMaxBatchKB  int64  `mapstructure:"argocd-server-side-diff-max-batch-kb"`
+	KubernetesConfig                string `mapstructure:"kubernetes-config"`
+	KubernetesType                  string `mapstructure:"kubernetes-type"`
+	KubernetesClusterID             string `mapstructure:"kubernetes-clusterid"`
 
 	// otel
 	EnableOtel        bool   `mapstructure:"otel-enabled"`

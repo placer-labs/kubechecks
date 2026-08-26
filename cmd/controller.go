@@ -214,6 +214,11 @@ func init() {
 	boolFlag(flags, "argocd-repository-insecure", `True if you need to skip validating the grpc tls certificate.`,
 		newBoolOpts().withDefault(true))
 	boolFlag(flags, "argocd-send-full-repository", `Set to true if you want to try to send the full repository to ArgoCD when generating manifests.`)
+	boolFlag(flags, "argocd-server-side-diff", `Ask the ArgoCD API to compute diffs with a server-side apply dry run, so fields set by defaulting or mutating webhooks stop showing as changes.`)
+	int64Flag(flags, "argocd-server-side-diff-concurrency", "Maximum concurrent server-side diff batches per application.",
+		newInt64Opts().withDefault(4))
+	int64Flag(flags, "argocd-server-side-diff-max-batch-kb", "Maximum server-side diff request batch size in KB.",
+		newInt64Opts().withDefault(250))
 	stringFlag(flags, "label-filter", `(Optional) If set, The label that must be set on an MR (as "kubechecks:<value>") for kubechecks to process the merge request webhook (KUBECHECKS_LABEL_FILTER).`)
 	stringFlag(flags, "openai-api-token", "OpenAI API Token.")
 	stringFlag(flags, "webhook-url-base", "The endpoint to listen on for incoming PR/MR event webhooks. For example, 'https://checker.mycompany.com'.")
