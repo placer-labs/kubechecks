@@ -49,8 +49,12 @@ jobs:
           build-args: |
             GIT_COMMIT=${{ github.sha }}
             GIT_TAG=placer-main
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Named scope so only this workflow shares the cache. Without it the
+          # entries sit in the default scope, which any future workflow -- PR
+          # builds included -- would read and write, putting untrusted input on
+          # the path to a published image.
+          cache-from: type=gha,scope=placer-main
+          cache-to: type=gha,mode=max,scope=placer-main
           tags: |
             ghcr.io/${{ github.repository }}:placer-main
             ghcr.io/${{ github.repository }}:placer-main-${{ github.sha }}
