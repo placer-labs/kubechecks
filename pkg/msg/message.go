@@ -5,12 +5,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel"
-	"golang.org/x/exp/slices"
 
 	"github.com/zapier/kubechecks/pkg"
 )
