@@ -131,7 +131,11 @@ func serverSideDiff(ctx context.Context, request checks.Request, items []objKeyL
 		}
 	}
 
-	log.Debug().Caller().
+	serverSideDiffSuccess.WithLabelValues(appName).Inc()
+
+	// Info rather than Debug: without this there is no way to tell a successful
+	// server-side diff from a silent fallback at the default log level.
+	log.Info().Caller().
 		Str("app", appName).
 		Int("resources", len(keys)).
 		Int("batches", len(batches)).

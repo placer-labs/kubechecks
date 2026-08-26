@@ -110,11 +110,14 @@ func Check(ctx context.Context, request checks.Request) (msg.Result, error) {
 	// apply dry run. A failure here is not fatal: fall back to the local diff
 	// so a check still reports something useful.
 	var ssdResults map[kube.ResourceKey]diff.DiffResult
+	var ssdFellBack bool
 	if request.Container.Config.ArgoCDServerSideDiff {
 		ssdResults, err = serverSideDiff(ctx, request, items, resources)
 		if err != nil {
 			log.Warn().Err(err).Str("app", app.Name).Msg("server-side diff failed, falling back to local diff")
+			serverSideDiffFallback.WithLabelValues(app.Name).Inc()
 			ssdResults = nil
+			ssdFellBack = true
 		}
 	}
 
@@ -153,6 +156,13 @@ func Check(ctx context.Context, request checks.Request) (msg.Result, error) {
 	} else {
 		cr.Summary = "No changes"
 		cr.NoChangesDetected = true
+	}
+
+	// Server-side diff models field ownership, so it reports removals the local
+	// diff misses. If it failed, say so rather than presenting a client-side
+	// diff as though it were the configured one.
+	if ssdFellBack {
+		cr.Summary += " (local diff: server-side diff unavailable)"
 	}
 
 	renderedDiff := diffBuffer.String()
