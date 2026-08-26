@@ -17,7 +17,6 @@ import (
 	"github.com/zapier/kubechecks/pkg"
 	"github.com/zapier/kubechecks/pkg/container"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
-	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -52,7 +51,7 @@ func (c *gen) GenerateApplicationSetApps(ctx context.Context, appset argov1alpha
 	}
 
 	repos := newRepoService(ctx, ctr)
-	appSetGenerators := getGenerators(ctx, *ctr.KubeClientSet.ControllerClient(), ctr.KubeClientSet.ClientSet(), ctr.Config.ArgoCDNamespace, repos)
+	appSetGenerators := getGenerators(*ctr.KubeClientSet.ControllerClient(), ctr.Config.ArgoCDNamespace, repos)
 
 	apps, appsetReason, err := generateApplications(appset, appSetGenerators, *ctr.KubeClientSet.ControllerClient())
 	if err != nil {
@@ -120,11 +119,11 @@ func pointGitToPR(g *argov1alpha1.GitGenerator, prRepoURL, prHeadSHA string) boo
 // GetGenerators returns the generators that will be used to generate applications for the ApplicationSet
 //
 // supports List, Clusters, and Git generators (plus Matrix/Merge composition of those)
-func getGenerators(ctx context.Context, c client.Client, k8sClient kubernetes.Interface, namespace string, repos services.Repos) map[string]argogenerator.Generator {
+func getGenerators(c client.Client, namespace string, repos services.Repos) map[string]argogenerator.Generator {
 
 	terminalGenerators := map[string]argogenerator.Generator{
 		"List":     argogenerator.NewListGenerator(),
-		"Clusters": argogenerator.NewClusterGenerator(ctx, c, k8sClient, namespace),
+		"Clusters": argogenerator.NewClusterGenerator(c, namespace),
 		"Git":      argogenerator.NewGitGenerator(repos, namespace),
 	}
 
