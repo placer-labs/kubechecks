@@ -15,7 +15,7 @@ import (
 )
 
 func initTestObjectsForAppSets(t *testing.T) *ApplicationSetWatcher {
-	ctx, cancel := context.WithCancel(context.Background())
+	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	cfg, err := config.New()
@@ -57,7 +57,7 @@ func initTestObjectsForAppSets(t *testing.T) *ApplicationSetWatcher {
 		vcsToArgoMap:         appdir.NewVcsToArgoMap("vcs-username"),
 	}
 
-	appInformer, appLister := ctrl.newApplicationSetInformerAndLister(time.Second*1, cfg, ctx)
+	appInformer, appLister := ctrl.newApplicationSetInformerAndLister(time.Second*1, cfg)
 	ctrl.appInformer = appInformer
 	ctrl.appLister = appLister
 	return ctrl

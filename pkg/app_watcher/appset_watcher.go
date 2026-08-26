@@ -39,7 +39,7 @@ func NewApplicationSetWatcher(ctr container.Container, ctx context.Context) (*Ap
 		vcsToArgoMap:         ctr.VcsToArgoMap,
 	}
 
-	appInformer, appLister := ctrl.newApplicationSetInformerAndLister(time.Second*30, ctr.Config, ctx)
+	appInformer, appLister := ctrl.newApplicationSetInformerAndLister(time.Second*30, ctr.Config)
 
 	ctrl.appInformer = appInformer
 	ctrl.appLister = appLister
@@ -72,7 +72,7 @@ func (ctrl *ApplicationSetWatcher) Run(ctx context.Context) {
 	<-ctx.Done()
 }
 
-func (ctrl *ApplicationSetWatcher) newApplicationSetInformerAndLister(refreshTimeout time.Duration, cfg config.ServerConfig, ctx context.Context) (cache.SharedIndexInformer, applisters.ApplicationSetLister) {
+func (ctrl *ApplicationSetWatcher) newApplicationSetInformerAndLister(refreshTimeout time.Duration, cfg config.ServerConfig) (cache.SharedIndexInformer, applisters.ApplicationSetLister) {
 	watchNamespace := cfg.ArgoCDNamespace
 	// If we have at least one additional namespace configured, we need to
 	// watch on them all.
@@ -82,7 +82,7 @@ func (ctrl *ApplicationSetWatcher) newApplicationSetInformerAndLister(refreshTim
 
 	informer := cache.NewSharedIndexInformer(
 		&cache.ListWatch{
-			ListFunc: func(options metav1.ListOptions) (apiruntime.Object, error) {
+			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (apiruntime.Object, error) {
 				// We are only interested in apps that exist in namespaces the
 				// user wants to be enabled.
 				appList, err := ctrl.applicationClientset.ArgoprojV1alpha1().ApplicationSets(watchNamespace).List(ctx, options)
@@ -98,7 +98,7 @@ func (ctrl *ApplicationSetWatcher) newApplicationSetInformerAndLister(refreshTim
 				appList.Items = newItems
 				return appList, nil
 			},
-			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
 				return ctrl.applicationClientset.ArgoprojV1alpha1().ApplicationSets(watchNamespace).Watch(ctx, options)
 			},
 		},
