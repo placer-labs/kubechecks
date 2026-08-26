@@ -16,7 +16,7 @@ import (
 )
 
 func initTestObjects(t *testing.T) *ApplicationWatcher {
-	ctx, cancel := context.WithCancel(context.Background())
+	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	cfg, err := config.New()
@@ -44,7 +44,7 @@ func initTestObjects(t *testing.T) *ApplicationWatcher {
 		vcsToArgoMap:         appdir.NewVcsToArgoMap("vcs-username"),
 	}
 
-	appInformer, appLister := ctrl.newApplicationInformerAndLister(time.Second*1, cfg, ctx)
+	appInformer, appLister := ctrl.newApplicationInformerAndLister(time.Second*1, cfg)
 	ctrl.appInformer = appInformer
 	ctrl.appLister = appLister
 
