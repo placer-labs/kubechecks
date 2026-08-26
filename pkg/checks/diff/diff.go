@@ -8,6 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/argoproj/argo-cd/gitops-engine/pkg/diff"
+	"github.com/argoproj/argo-cd/gitops-engine/pkg/sync/hook"
+	"github.com/argoproj/argo-cd/gitops-engine/pkg/sync/ignore"
+	"github.com/argoproj/argo-cd/gitops-engine/pkg/utils/kube"
 	cmdutil "github.com/argoproj/argo-cd/v3/cmd/util"
 	"github.com/argoproj/argo-cd/v3/controller"
 	"github.com/argoproj/argo-cd/v3/pkg/apiclient/application"
@@ -16,10 +20,6 @@ import (
 	"github.com/argoproj/argo-cd/v3/util/argo"
 	argodiff "github.com/argoproj/argo-cd/v3/util/argo/diff"
 	"github.com/argoproj/argo-cd/v3/util/argo/normalizers"
-	"github.com/argoproj/argo-cd/gitops-engine/pkg/diff"
-	"github.com/argoproj/argo-cd/gitops-engine/pkg/sync/hook"
-	"github.com/argoproj/argo-cd/gitops-engine/pkg/sync/ignore"
-	"github.com/argoproj/argo-cd/gitops-engine/pkg/utils/kube"
 	"github.com/ghodss/yaml"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zerologr"
@@ -106,6 +106,18 @@ func Check(ctx context.Context, request checks.Request) (msg.Result, error) {
 		return msg.Result{}, err
 	}
 
+	// When enabled, let the ArgoCD API compute the diffs with a server-side
+	// apply dry run. A failure here is not fatal: fall back to the local diff
+	// so a check still reports something useful.
+	var ssdResults map[kube.ResourceKey]diff.DiffResult
+	if request.Container.Config.ArgoCDServerSideDiff {
+		ssdResults, err = serverSideDiff(ctx, request, items, resources)
+		if err != nil {
+			log.Warn().Err(err).Str("app", app.Name).Msg("server-side diff failed, falling back to local diff")
+			ssdResults = nil
+		}
+	}
+
 	var diffBuffer strings.Builder
 	var added, modified, removed int
 	for _, item := range items {
@@ -116,9 +128,12 @@ func Check(ctx context.Context, request checks.Request) (msg.Result, error) {
 			continue
 		}
 
-		diffRes, err := generateDiff(ctx, request, argoSettings, item)
-		if err != nil {
-			return msg.Result{}, err
+		diffRes, ok := ssdResults[item.key]
+		if !ok {
+			diffRes, err = generateDiff(ctx, request, argoSettings, item)
+			if err != nil {
+				return msg.Result{}, err
+			}
 		}
 
 		if diffRes.Modified || item.target == nil || item.live == nil {
