@@ -164,7 +164,7 @@ func appToUnstructured(app *v1alpha1.Application) (*unstructured.Unstructured, e
 	clean.ResourceVersion = ""
 	clean.UID = ""
 	clean.Generation = 0
-	clean.CreationTimestamp.Time = clean.CreationTimestamp.Time.Truncate(0)
+	clean.CreationTimestamp.Time = clean.CreationTimestamp.Truncate(0)
 
 	raw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(clean)
 	if err != nil {
