@@ -52,12 +52,12 @@ type aiReviewAppResult struct {
 }
 
 type CheckEvent struct {
-	fileList    []string // What files have changed in this PR/MR
-	pullRequest vcs.PullRequest
-	logger      zerolog.Logger
+	fileList           []string // What files have changed in this PR/MR
+	pullRequest        vcs.PullRequest
+	logger             zerolog.Logger
 	vcsNote            *msg.Message
 	appSetSpecFindings []appSetSpecFinding
-	aiNote      *msg.Message // separate comment for AI review
+	aiNote             *msg.Message // separate comment for AI review
 
 	affectedItems affected_apps.AffectedItems
 
@@ -170,6 +170,17 @@ func (ce *CheckEvent) GenerateListOfAffectedApps(ctx context.Context, repo *git.
 			continue
 		}
 
+		// Build a set of appset-generated app names for fast lookup.
+		generatedNames := make(map[string]struct{}, len(apps))
+		for _, a := range apps {
+			generatedNames[a.Name] = struct{}{}
+		}
+
+		// Apps the AppSet produced at base but no longer produces at head are
+		// being removed by this PR. Their source path is gone from the PR tree,
+		// so rendering them can only fail on a missing directory.
+		removedNames := make(map[string]struct{})
+
 		// Also generate at base (AppSet's configured revision) so we can
 		// diff the per-Application spec produced by the AppSet across the
 		// PR and surface "added/removed/modified by AppSet" findings. PRs
@@ -181,15 +192,18 @@ func (ce *CheckEvent) GenerateListOfAffectedApps(ctx context.Context, repo *git.
 				Msg("could not generate base apps from appSet; spec diff will be skipped")
 		} else {
 			// vcsNote is created later in Process; stash findings and flush
-			// once the note exists.
+			// once the note exists. Narrow the diff to apps the PR's changed
+			// files actually affect — otherwise a PR branch that is far behind
+			// the base branch floods the report with "removed by AppSet"
+			// findings for unrelated apps (see appSetSpecDiffForChange).
 			ce.appSetSpecFindings = append(ce.appSetSpecFindings,
-				computeAppSetSpecDiff(ce.logger, appSet.Name, apps, baseApps)...)
-		}
+				appSetSpecDiffForChange(ce.logger, appSet.Name, apps, baseApps, ce.fileList, ce.pullRequest.BaseRef)...)
 
-		// Build a set of appset-generated app names for fast lookup.
-		generatedNames := make(map[string]struct{}, len(apps))
-		for _, a := range apps {
-			generatedNames[a.Name] = struct{}{}
+			for _, a := range baseApps {
+				if _, stillGenerated := generatedNames[a.Name]; !stillGenerated {
+					removedNames[a.Name] = struct{}{}
+				}
+			}
 		}
 
 		// Remove matcher-found apps that the appset generator also produced,
@@ -198,6 +212,10 @@ func (ce *CheckEvent) GenerateListOfAffectedApps(ctx context.Context, repo *git.
 		for _, existing := range ce.affectedItems.Applications {
 			if _, ok := generatedNames[existing.Name]; ok {
 				ce.logger.Debug().Caller().Msgf("replacing matcher app %s with appset-generated version", existing.Name)
+				continue
+			}
+			if _, removed := removedNames[existing.Name]; removed {
+				ce.logger.Debug().Caller().Msgf("skipping matcher app %s: removed by appset %s", existing.Name, appSet.Name)
 				continue
 			}
 			filtered = append(filtered, existing)
