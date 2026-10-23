@@ -1,0 +1,43 @@
+suite: pdb
+
+templates:
+  - templates/pdb.yaml
+
+tests:
+  - it: renders nothing by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: defaults to maxUnavailable 1
+    set:
+      podDisruptionBudget:
+        create: true
+    release:
+      name: kubechecks
+    asserts:
+      - equal:
+          path: apiVersion
+          value: policy/v1
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+      - notExists:
+          path: spec.minAvailable
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/instance: kubechecks
+            app.kubernetes.io/name: kubechecks
+
+  - it: uses minAvailable when set
+    set:
+      podDisruptionBudget:
+        create: true
+        minAvailable: 1
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 1
+      - notExists:
+          path: spec.maxUnavailable

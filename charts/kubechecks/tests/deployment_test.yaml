@@ -137,18 +137,18 @@ tests:
             failureThreshold: 300
             httpGet:
               path: /live
-              port: 8080
+              port: http
               scheme: HTTP
             periodSeconds: 5
+            timeoutSeconds: 5
       - equal:
           path: spec.template.spec.containers[0].livenessProbe
           value:
             failureThreshold: 200
             httpGet:
               path: /live
-              port: 8080
+              port: http
               scheme: HTTP
-            initialDelaySeconds: 5
             periodSeconds: 50
             successThreshold: 1
             timeoutSeconds: 5
@@ -158,9 +158,8 @@ tests:
             failureThreshold: 100
             httpGet:
               path: /ready
-              port: 8080
+              port: http
               scheme: HTTP
-            initialDelaySeconds: 5
             periodSeconds: 10
             successThreshold: 1
             timeoutSeconds: 5
@@ -326,8 +325,11 @@ tests:
           path: spec.template.spec.volumes
       - notExists:
           path: spec.template.spec.containers[0].volumeMounts
-      - notExists:
+      - equal:
           path: spec.template.spec.containers[0].env
+          value:
+            - name: KUBECHECKS_SHUTDOWN_TIMEOUT
+              value: 25s
 
   - it: pins the image by digest when set
     template: templates/deployment.yaml
@@ -340,3 +342,41 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].image
           value: ghcr.io/zapier/kubechecks:v1.0.0@sha256:1111111111111111111111111111111111111111111111111111111111111111
+
+  - it: fits the app's shutdown drain inside the grace period
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.terminationGracePeriodSeconds
+          value: 30
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBECHECKS_SHUTDOWN_TIMEOUT
+            value: 25s
+
+  - it: derives the drain from a shorter spot-friendly grace period
+    template: templates/deployment.yaml
+    set:
+      deployment:
+        terminationGracePeriodSeconds: 15
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBECHECKS_SHUTDOWN_TIMEOUT
+            value: 10s
+
+  - it: leaves a user-set shutdown timeout alone
+    template: templates/deployment.yaml
+    set:
+      configMap:
+        create: true
+        env:
+          KUBECHECKS_SHUTDOWN_TIMEOUT: 12s
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: KUBECHECKS_SHUTDOWN_TIMEOUT
+            value: 25s

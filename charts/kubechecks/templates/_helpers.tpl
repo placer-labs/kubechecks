@@ -66,3 +66,20 @@ Create the name of the secret file to use
 {{- define "kubechecks.secretsName" -}}
 {{- tpl .Values.secrets.name . }}
 {{- end -}}
+
+{{/*
+KUBECHECKS_SHUTDOWN_TIMEOUT derived from the grace period, unless the user sets
+it themselves. Rendered only when the user doesn't, so the pod spec doesn't
+carry the variable twice.
+*/}}
+{{- define "kubechecks.shutdownTimeoutEnv" -}}
+{{- $grace := int (.Values.deployment.terminationGracePeriodSeconds | default 30) -}}
+{{- $userSet := or (hasKey .Values.configMap.env "KUBECHECKS_SHUTDOWN_TIMEOUT") (hasKey .Values.secrets.env "KUBECHECKS_SHUTDOWN_TIMEOUT") -}}
+{{- range .Values.deployment.env }}
+{{- if eq .name "KUBECHECKS_SHUTDOWN_TIMEOUT" }}{{ $userSet = true }}{{ end }}
+{{- end }}
+{{- if not $userSet }}
+- name: KUBECHECKS_SHUTDOWN_TIMEOUT
+  value: {{ printf "%ds" (max 1 (sub $grace 5)) | quote }}
+{{- end }}
+{{- end }}

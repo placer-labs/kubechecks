@@ -8,7 +8,9 @@ metadata:
   labels: {{- include "kubechecks.labels" . | nindent 4 }}
 spec:
   revisionHistoryLimit: {{ .Values.deployment.revisionHistoryLimit }}
+  {{- if not .Values.autoscaling.create }}
   replicas: {{ .Values.deployment.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "kubechecks.selectorLabels" . | nindent 6 }}
@@ -41,6 +43,9 @@ spec:
       serviceAccountName: {{ include "kubechecks.serviceAccountName" . }}
       {{- end }}
       automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      {{- with .Values.deployment.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.deployment.podSecurityContext | nindent 8 }}
       {{- with .Values.deployment.initContainers }}
@@ -70,8 +75,8 @@ spec:
             {{- . | toYaml | nindent 12 }}
           {{- end }}
           {{- end }}
-          {{- if or .Values.deployment.env .Values.deployment.tmpVolume.enabled }}
           env:
+            {{- include "kubechecks.shutdownTimeoutEnv" . | trim | nindent 12 }}
             {{- if .Values.deployment.tmpVolume.enabled }}
             - name: XDG_CACHE_HOME
               value: /tmp/.cache
@@ -83,7 +88,6 @@ spec:
             {{- with .Values.deployment.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- end }}
           ports:
             - name: {{ .Values.service.name }}
               containerPort: 8080
@@ -97,19 +101,19 @@ spec:
           startupProbe:
             httpGet:
               path: /live
-              port: 8080
+              port: {{ .Values.service.name }}
               scheme: HTTP
             {{- toYaml .Values.deployment.startupProbe | nindent 12 }}
           livenessProbe:
             httpGet:
               path: /live
-              port: 8080
+              port: {{ .Values.service.name }}
               scheme: HTTP
             {{- toYaml .Values.deployment.livenessProbe | nindent 12 }}
           readinessProbe:
             httpGet:
               path: /ready
-              port: 8080
+              port: {{ .Values.service.name }}
               scheme: HTTP
             {{- toYaml .Values.deployment.readinessProbe | nindent 12 }}
           {{- if or .Values.deployment.volumeMounts .Values.deployment.tmpVolume.enabled }}
