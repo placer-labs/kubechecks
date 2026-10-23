@@ -14,3 +14,11 @@ updates:
     package-ecosystem: "gomod"
     schedule:
       interval: "weekly"
+  - directory: "/"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    package-ecosystem: "github-actions"
+    schedule:
+      interval: "weekly"
