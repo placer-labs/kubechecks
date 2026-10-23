@@ -1,81 +1,19 @@
 suite: autoscaling tests
 
 templates:
-  - "*.yaml"
+  - templates/hpa.yaml
+  - templates/deployment.yaml
 
 tests:
-  - it: can have v2beta1
+  - it: renders an autoscaling/v2 HPA
     template: templates/hpa.yaml
     set:
       autoscaling:
         create: true
+        minReplicas: 1
+        maxReplicas: 3
         targetCPUUtilizationPercentage: 10
         targetMemoryUtilizationPercentage: 15
-    capabilities:
-      apiVersions:
-        - autoscaling/v2beta1
-    asserts:
-      - equal:
-          path: apiVersion
-          value: autoscaling/v2beta1
-      - equal:
-          path: spec.metrics[0]
-          value:
-            type: Resource
-            resource:
-              name: cpu
-              targetAverageUtilization: 10
-      - equal:
-          path: spec.metrics[1]
-          value:
-            type: Resource
-            resource:
-              name: memory
-              targetAverageUtilization: 15
-
-  - it: can have v2beta2
-    template: templates/hpa.yaml
-    set:
-      autoscaling:
-        create: true
-        targetCPUUtilizationPercentage: 10
-        targetMemoryUtilizationPercentage: 15
-    capabilities:
-      apiVersions:
-        - autoscaling/v2beta2
-    asserts:
-      - equal:
-          path: apiVersion
-          value: autoscaling/v2beta2
-      - equal:
-          path: spec.metrics[0]
-          value:
-            type: Resource
-            resource:
-              name: cpu
-              target:
-                type: Utilization
-                averageUtilization: 10
-      - equal:
-          path: spec.metrics[1]
-          value:
-            type: Resource
-            resource:
-              name: memory
-              target:
-                type: Utilization
-                averageUtilization: 15
-
-  - it: can have v2
-    template: templates/hpa.yaml
-    set:
-      autoscaling:
-        create: true
-        targetCPUUtilizationPercentage: 10
-        targetMemoryUtilizationPercentage: 15
-    capabilities:
-      apiVersions:
-        - autoscaling/v2
     asserts:
       - equal:
           path: apiVersion
@@ -99,28 +37,19 @@ tests:
                 type: Utilization
                 averageUtilization: 15
 
-  - it: prefers v2
+  - it: renders nothing by default
     template: templates/hpa.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: leaves replicas to the HPA when enabled
+    template: templates/deployment.yaml
     set:
       autoscaling:
         create: true
-    capabilities:
-      apiVersions:
-        - autoscaling/v2beta1
-        - autoscaling/v2beta2
-        - autoscaling/v2
+        minReplicas: 1
+        maxReplicas: 3
     asserts:
-      - equal:
-          path: apiVersion
-          value: autoscaling/v2
-  - it: renders nothing with no support
-    template: templates/hpa.yaml
-    set:
-      autoscaling:
-        create: true
-    capabilities:
-      apiVersions:
-        - autoscaling/vFake
-    asserts:
-      - failedTemplate:
-          errorMessage: server has no support for autoscaling
+      - notExists:
+          path: spec.replicas

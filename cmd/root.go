@@ -143,6 +143,9 @@ func init() {
 	durationFlag(flags, "archive-cache-ttl", "Time-to-live for cached archives.",
 		newDurationOpts().
 			withDefault(1*time.Hour))
+	durationFlag(flags, "shutdown-timeout", "How long to wait for in-flight checks and the HTTP server on SIGTERM. Keep it below the pod's terminationGracePeriodSeconds.",
+		newDurationOpts().
+			withDefault(30*time.Second))
 	stringFlag(flags, "identifier", "Identifier for the kubechecks instance. Used to differentiate between multiple kubechecks instances.",
 		newStringOpts().
 			withDefault(""))

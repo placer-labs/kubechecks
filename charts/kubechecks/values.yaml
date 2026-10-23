@@ -41,6 +41,13 @@ argocd:
 
 commonLabels: {}
 
+rbac:
+  # Grant get/list/watch on Secrets in every namespace. kubechecks only reads
+  # repository and cluster credentials from argocd.namespace, which the
+  # namespaced Role already covers, so this is off. It's here for setups that
+  # keep those secrets elsewhere.
+  clusterWideSecrets: false
+
 configMap:
   create: false
   env: {}
@@ -89,6 +96,9 @@ deployment:
     pullPolicy: Always
     name: "ghcr.io/zapier/kubechecks"
     tag: "latest"
+    # Pin the image by digest (sha256:...). When set it is appended to the
+    # tag (name:tag@digest), and the runtime pulls exactly that image.
+    digest: ""
 
   imagePullSecrets: []
 
@@ -98,40 +108,71 @@ deployment:
 
   affinity: {}
 
-  podSecurityContext: {}
-    # runAsNonRoot: true
-    # runAsUser: 32123
-    # fsGroup: 32123
+  # Restricted Pod Security Standard by default. The image runs as the
+  # kubechecks user (uid/gid 1000); override all three ids together if you
+  # run a different image.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
 
-  securityContext: {}
-    # allowPrivilegeEscalation: false
-    # privileged: false
-    # capabilities:
-    #   drop:
-    #     - ALL
-    # readOnlyRootFilesystem: false
+  securityContext:
+    allowPrivilegeEscalation: false
+    privileged: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+  # Writable scratch space. kubechecks clones repos, unpacks archives and caches
+  # charts and schemas under /tmp, so a read-only root filesystem needs this.
+  # XDG_* are pointed into it too, for Helm's config and cache.
+  tmpVolume:
+    enabled: true
+    # Any emptyDir fields, e.g. sizeLimit: 10Gi or medium: Memory.
+    emptyDir: {}
 
   env: []
 
   envFrom: []
 
+  # /live answers as soon as the HTTP server is up. /ready also waits for the
+  # Application/ApplicationSet informer caches to sync, so a new pod gets no
+  # webhooks until it can match them to apps.
+  #
+  # The startup probe covers the slow part of boot (webhook registration, the
+  # first informer list), allowing up to 5 minutes. Once it passes, liveness
+  # restarts a hung pod after ~30s and readiness pulls it out of the Service
+  # after ~30s, instead of the 5 minutes each used to take.
   startupProbe:
     failureThreshold: 30
     periodSeconds: 10
+    timeoutSeconds: 5
 
   livenessProbe:
-    failureThreshold: 30
-    initialDelaySeconds: 5
+    failureThreshold: 3
     periodSeconds: 10
     successThreshold: 1
     timeoutSeconds: 5
 
   readinessProbe:
-    failureThreshold: 30
-    initialDelaySeconds: 5
+    failureThreshold: 3
     periodSeconds: 10
     successThreshold: 1
     timeoutSeconds: 5
+
+  # On SIGTERM kubechecks drains in-flight checks before exiting. The chart
+  # sets KUBECHECKS_SHUTDOWN_TIMEOUT to 5s less than this, so the drain
+  # finishes before the kubelet's SIGKILL. A KUBECHECKS_SHUTDOWN_TIMEOUT you
+  # set in configMap.env, secrets.env or deployment.env takes precedence.
+  #
+  # Spot/preemptible nodes give about 30s of notice in total, and GKE gives
+  # regular pods only part of that during node shutdown. Lower this to match
+  # if checks are being cut off. A check cut off here re-runs on the next push.
+  terminationGracePeriodSeconds: 30
 
   volumes: []
   volumeMounts: []
@@ -149,6 +190,8 @@ serviceAccount:
   # Specifies whether a service account should be created or used
   create: true
   enabled: true
+  # kubechecks talks to the Kubernetes API, so the token is mounted by default.
+  automountServiceAccountToken: true
   name: '{{ include "kubechecks.fullname" . }}'
   annotations: {}
 
@@ -177,9 +220,21 @@ ingress:
   #    hosts:
   #    - kubechecks.example.com
 
+# Leave kubechecks at one replica. Each repository's checks run through an
+# in-process queue, one at a time per repo; with several replicas, two pushes
+# to the same PR can land on different pods and race on its comment. Only
+# enable autoscaling if you accept that.
 autoscaling:
   create: false
   # minReplicas: 1
   # maxReplicas: 100
   # targetCPUUtilizationPercentage: 80
   # targetMemoryUtilizationPercentage: 80
+
+# Only useful with more than one replica (see autoscaling above). With one
+# replica, maxUnavailable: 1 doesn't protect anything, and minAvailable: 1
+# blocks node drains.
+podDisruptionBudget:
+  create: false
+  maxUnavailable: 1
+  # minAvailable: 1

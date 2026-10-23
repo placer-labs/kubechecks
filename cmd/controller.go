@@ -126,9 +126,9 @@ var ControllerCmd = &cobra.Command{
 		log.Info().Msg("listening for requests")
 		waitForShutdown()
 
-		// Begin graceful shutdown with 30 second timeout
-		log.Info().Msg("shutting down gracefully")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Begin graceful shutdown, bounded so it finishes inside the pod's grace period
+		log.Info().Dur("timeout", cfg.ShutdownTimeout).Msg("shutting down gracefully")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
 
 		// Wait for in-flight requests to complete (with timeout)

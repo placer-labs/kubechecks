@@ -164,6 +164,7 @@ The full list of supported environment variables is described below:
 |`KUBECHECKS_REPO_REFRESH_INTERVAL`|Interval between static repo refreshes (for schemas and policies).|`5m`|
 |`KUBECHECKS_SCHEMAS_LOCATION`|Sets schema locations to be used for every check request. An absolute path on the host, or a git url in either git or http(s) format, is used as given. A relative path names a directory inside the repository being checked, so that schemas committed alongside the manifests that use them are found. Any location may be a kubeconform path template, such as ".github/schemas/{{ .ResourceKind }}_{{ .ResourceAPIVersion }}.json", when the files are not named "<kind>-<group>-<version>.json".|`[]`|
 |`KUBECHECKS_SHOW_DEBUG_INFO`|Set to true to print debug info to the footer of MR comments.|`false`|
+|`KUBECHECKS_SHUTDOWN_TIMEOUT`|How long to wait for in-flight checks and the HTTP server on SIGTERM. Keep it below the pod's terminationGracePeriodSeconds.|`30s`|
 |`KUBECHECKS_TIDY_OUTDATED_COMMENTS_MODE`|Sets the mode to use when tidying outdated comments. One of hide, delete.|`hide`|
 |`KUBECHECKS_VCS_BASE_URL`|VCS base url, useful if self hosting gitlab, enterprise github, etc.||
 |`KUBECHECKS_VCS_EMAIL`|VCS Email.||
