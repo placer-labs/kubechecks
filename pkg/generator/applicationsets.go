@@ -13,6 +13,7 @@ import (
 	"github.com/argoproj/argo-cd/v3/reposerver/apiclient"
 	"github.com/argoproj/argo-cd/v3/util/db"
 	argosettings "github.com/argoproj/argo-cd/v3/util/settings"
+	utiltls "github.com/argoproj/argo-cd/v3/util/tls"
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/kubechecks/pkg"
 	"github.com/zapier/kubechecks/pkg/container"
@@ -157,7 +158,7 @@ func newRepoService(ctx context.Context, ctr *container.Container) services.Repo
 	repoClientset := apiclient.NewRepoServerClientset(
 		ctr.Config.ArgoCDRepositoryEndpoint,
 		0,
-		apiclient.TLSConfiguration{
+		utiltls.Configuration{
 			DisableTLS:       false,
 			StrictValidation: !ctr.Config.ArgoCDRepositoryInsecure,
 		},

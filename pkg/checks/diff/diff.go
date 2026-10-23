@@ -345,7 +345,10 @@ func groupObjsByKey(localObs []*unstructured.Unstructured, liveObjs []*unstructu
 			namespacedByGk[schema.GroupKind{Group: key.Group, Kind: key.Kind}] = key.Namespace != ""
 		}
 	}
-	localObs, _, err := controller.DeduplicateTargetObjects(appNamespace, localObs, &resourceInfoProvider{namespacedByGk: namespacedByGk})
+	// argo-cd v3.5 renamed DeduplicateTargetObjects to NormalizeTargetObjects and added a
+	// setAppInstance callback. It only fires when a namespace was corrected, which the old
+	// dedup-only function never did, so a no-op keeps the previous behaviour.
+	localObs, _, err := controller.NormalizeTargetObjects(appNamespace, localObs, &resourceInfoProvider{namespacedByGk: namespacedByGk}, func(*unstructured.Unstructured) error { return nil })
 	if err != nil {
 		return nil, err
 	}
