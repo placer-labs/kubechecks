@@ -215,6 +215,19 @@ func (d *Downloader) extract(zipData []byte, targetDir string) (string, error) {
 		return "", errors.Wrap(err, "failed to create target directory")
 	}
 
+	// All writes go through an os.Root so no entry can escape targetDir,
+	// whether via "..", an absolute path, or a symlink planted by an earlier entry.
+	root, err := os.OpenRoot(targetDir)
+	if err != nil {
+		archiveExtractFailed.Inc()
+		return "", errors.Wrap(err, "failed to open target directory")
+	}
+	defer func() {
+		if closeErr := root.Close(); closeErr != nil {
+			log.Warn().Err(closeErr).Msg("failed to close target directory")
+		}
+	}()
+
 	// Track top-level directory (GitHub/GitLab archives have a top-level folder)
 	var topLevelDir string
 	fileCount := 0
@@ -232,7 +245,7 @@ func (d *Downloader) extract(zipData []byte, targetDir string) (string, error) {
 		}
 
 		// Extract file
-		if err := d.extractFile(file, targetDir); err != nil {
+		if err := d.extractFile(file, root); err != nil {
 			archiveExtractFailed.Inc()
 			return "", errors.Wrapf(err, "failed to extract file: %s", file.Name)
 		}
@@ -279,24 +292,33 @@ func isRetriableDownloadError(ctx context.Context, err error) bool {
 }
 
 // extractFile extracts a single file from zip archive
-func (d *Downloader) extractFile(file *zip.File, targetDir string) error {
-	// Create full path
-	path := filepath.Join(targetDir, file.Name)
-
-	// Prevent path traversal
-	rel, err := filepath.Rel(filepath.Clean(targetDir), path)
-	if err != nil || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." || filepath.IsAbs(rel) {
+func (d *Downloader) extractFile(file *zip.File, root *os.Root) error {
+	// Reject absolute paths and ".." components up front; root enforces the same
+	// containment for every operation below.
+	name := filepath.FromSlash(file.Name)
+	if !filepath.IsLocal(name) {
 		return fmt.Errorf("invalid file path (path traversal detected): %s", file.Name)
 	}
 
+	mode := file.Mode()
+
 	// Create directory for file
-	if file.FileInfo().IsDir() {
-		return os.MkdirAll(path, file.Mode())
+	if mode.IsDir() {
+		return root.MkdirAll(name, mode.Perm())
+	}
+
+	// Repository archives only need regular files; skip symlinks and other
+	// special entries rather than materializing them.
+	if !mode.IsRegular() {
+		log.Debug().Caller().Str("file", file.Name).Str("mode", mode.String()).Msg("skipping non-regular archive entry")
+		return nil
 	}
 
 	// Create parent directories
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
+	if dir := filepath.Dir(name); dir != "." {
+		if err := root.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
 	}
 
 	// Open file in zip
@@ -311,13 +333,13 @@ func (d *Downloader) extractFile(file *zip.File, targetDir string) error {
 	}()
 
 	// Create destination file
-	dstFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+	dstFile, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode.Perm())
 	if err != nil {
 		return err
 	}
 	defer func() {
 		if closeErr := dstFile.Close(); closeErr != nil {
-			log.Warn().Err(closeErr).Str("path", path).Msg("failed to close destination file")
+			log.Warn().Err(closeErr).Str("path", name).Msg("failed to close destination file")
 		}
 	}()
 
