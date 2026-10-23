@@ -223,3 +223,78 @@ func TestDownloader_FollowsRedirect(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "hello from zip", string(body))
 }
+
+type zipEntry struct {
+	name string
+	mode os.FileMode
+	body string
+}
+
+func buildZip(t *testing.T, entries []zipEntry) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, e := range entries {
+		hdr := &zip.FileHeader{Name: e.name, Method: zip.Deflate}
+		hdr.SetMode(e.mode)
+		w, err := zw.CreateHeader(hdr)
+		require.NoError(t, err)
+		_, err = w.Write([]byte(e.body))
+		require.NoError(t, err)
+	}
+	require.NoError(t, zw.Close())
+
+	return buf.Bytes()
+}
+
+func TestDownloader_Extract(t *testing.T) {
+	t.Run("extracts files and strips the top-level directory", func(t *testing.T) {
+		targetDir := t.TempDir()
+		data := buildZip(t, []zipEntry{
+			{name: "repo-abc123/", mode: os.ModeDir | 0755},
+			{name: "repo-abc123/apps/app.yaml", mode: 0644, body: "kind: Application"},
+		})
+
+		contentDir, err := NewDownloader().extract(data, targetDir)
+		require.NoError(t, err)
+		assert.Equal(t, filepath.Join(targetDir, "repo-abc123"), contentDir)
+
+		got, err := os.ReadFile(filepath.Join(contentDir, "apps", "app.yaml"))
+		require.NoError(t, err)
+		assert.Equal(t, "kind: Application", string(got))
+	})
+
+	for _, name := range []string{"../escape.txt", "repo/../../escape.txt", "/tmp/escape.txt"} {
+		t.Run("rejects "+name, func(t *testing.T) {
+			parent := t.TempDir()
+			targetDir := filepath.Join(parent, "target")
+			data := buildZip(t, []zipEntry{{name: name, mode: 0644, body: "pwned"}})
+
+			_, err := NewDownloader().extract(data, targetDir)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "path traversal")
+			assert.NoFileExists(t, filepath.Join(parent, "escape.txt"))
+		})
+	}
+
+	t.Run("skips symlink entries", func(t *testing.T) {
+		parent := t.TempDir()
+		targetDir := filepath.Join(parent, "target")
+		data := buildZip(t, []zipEntry{
+			{name: "repo/", mode: os.ModeDir | 0755},
+			{name: "repo/link", mode: os.ModeSymlink | 0777, body: "../.."},
+			{name: "repo/link/escape.txt", mode: 0644, body: "pwned"},
+		})
+
+		_, err := NewDownloader().extract(data, targetDir)
+		require.NoError(t, err)
+
+		_, err = os.Lstat(filepath.Join(targetDir, "repo", "link", "escape.txt"))
+		require.NoError(t, err, "link should be a plain directory created for the later entry")
+		info, err := os.Lstat(filepath.Join(targetDir, "repo", "link"))
+		require.NoError(t, err)
+		assert.True(t, info.IsDir())
+		assert.NoFileExists(t, filepath.Join(parent, "escape.txt"))
+	})
+}
