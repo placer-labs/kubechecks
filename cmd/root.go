@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,6 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/zapier/kubechecks/pkg"
 )
 
 // RootCmd represents the base command when called without any subcommands
@@ -88,7 +91,7 @@ func init() {
 		newStringOpts().
 			withChoices("hide", "delete").
 			withDefault("hide"))
-	stringSliceFlag(flags, "schemas-location", "Sets schema locations to be used for every check request. Can be a common path on the host or git urls in either git or http(s) format.")
+	stringSliceFlag(flags, "schemas-location", "Sets schema locations to be used for every check request. An absolute path on the host, or a git url in either git or http(s) format, is used as given. A relative path names a directory inside the repository being checked, so that schemas committed alongside the manifests that use them are found. Any location may be a kubeconform path template, such as \".github/schemas/{{ .ResourceKind }}_{{ .ResourceAPIVersion }}.json\", when the files are not named \"<kind>-<group>-<version>.json\".")
 	boolFlag(flags, "enable-conftest", "Set to true to enable conftest policy checking of manifests.")
 	stringSliceFlag(flags, "policies-location", "Sets rego policy locations to be used for every check request. Can be common path inside the repos being checked or git urls in either git or http(s) format.",
 		newStringSliceOpts().
@@ -143,9 +146,10 @@ func init() {
 	stringFlag(flags, "identifier", "Identifier for the kubechecks instance. Used to differentiate between multiple kubechecks instances.",
 		newStringOpts().
 			withDefault(""))
-	int64Flag(flags, "max-comments-per-check", "Maximum number of comments posted per check run. 0 means unlimited.",
+	int64Flag(flags, "max-comments-per-check",
+		fmt.Sprintf("Maximum number of comments posted per check run, 1 to %d. What does not fit is left out of the report, with a warning.", pkg.MaxCommentsPerCheck),
 		newInt64Opts().
-			withDefault(0))
+			withDefault(pkg.MaxCommentsPerCheck))
 	stringFlag(flags, "kubepug-generated-store", "URL for the kubepug generated store.",
 		newStringOpts().
 			withDefault("https://kubepug.xyz/data/data.json"))
