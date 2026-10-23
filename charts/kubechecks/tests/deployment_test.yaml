@@ -162,6 +162,8 @@ tests:
     template: templates/deployment.yaml
     set:
       deployment:
+        tmpVolume:
+          enabled: false
         volumes:
           - name: test-volume
             hostPath:
@@ -225,3 +227,89 @@ tests:
             app.kubernetes.io/name: kubechecks
             app.kubernetes.io/version: 2.0.0
             helm.sh/chart: kubechecks-0.1.0
+
+  - it: is hardened by default
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            fsGroup: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: true
+
+  - it: mounts a writable /tmp ahead of user volumes
+    template: templates/deployment.yaml
+    set:
+      deployment:
+        tmpVolume:
+          emptyDir:
+            sizeLimit: 5Gi
+        volumes:
+          - name: test-volume
+            emptyDir: {}
+        volumeMounts:
+          - name: test-volume
+            mountPath: /ghi
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes
+          value:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 5Gi
+            - name: test-volume
+              emptyDir: {}
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts
+          value:
+            - name: tmp
+              mountPath: /tmp
+            - name: test-volume
+              mountPath: /ghi
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: XDG_CACHE_HOME
+            value: /tmp/.cache
+
+  - it: omits the tmp volume and XDG env when disabled
+    template: templates/deployment.yaml
+    set:
+      deployment:
+        tmpVolume:
+          enabled: false
+    asserts:
+      - notExists:
+          path: spec.template.spec.volumes
+      - notExists:
+          path: spec.template.spec.containers[0].volumeMounts
+      - notExists:
+          path: spec.template.spec.containers[0].env
+
+  - it: pins the image by digest when set
+    template: templates/deployment.yaml
+    set:
+      deployment:
+        image:
+          tag: v1.0.0
+          digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/zapier/kubechecks:v1.0.0@sha256:1111111111111111111111111111111111111111111111111111111111111111

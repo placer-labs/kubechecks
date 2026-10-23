@@ -14,6 +14,7 @@ spec:
       {{- include "kubechecks.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- if or .Values.configMap.create .Values.secrets.create .Values.deployment.podAnnotations }}
       annotations:
       {{- if .Values.configMap.create }}
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
@@ -23,6 +24,7 @@ spec:
       {{- end }}
       {{- with .Values.deployment.podAnnotations }}
         {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}
       labels:
         {{- if .Values.commonLabels }}
@@ -37,6 +39,7 @@ spec:
       {{- if .Values.serviceAccount.enabled}}
       serviceAccountName: {{ include "kubechecks.serviceAccountName" . }}
       {{- end }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
       securityContext:
         {{- toYaml .Values.deployment.podSecurityContext | nindent 8 }}
       {{- with .Values.deployment.initContainers }}
@@ -46,12 +49,13 @@ spec:
       containers:
         - name: {{ .Chart.Name }}
           {{- with .Values.deployment.image }}
-          image: "{{ .name }}:{{ required "must set .deployment.image.tag" .tag }}"
+          image: "{{ .name }}:{{ required "must set .deployment.image.tag" .tag }}{{ with .digest }}@{{ . }}{{ end }}"
           imagePullPolicy: {{ .pullPolicy }}
           {{- end }}
           {{- with .Values.deployment.args }}
           args: {{ . | toYaml | nindent 12 }}
           {{- end }}
+          {{- if or .Values.configMap.create .Values.secrets.create .Values.deployment.envFrom }}
           envFrom:
             {{- if .Values.configMap.create }}
             - configMapRef:
@@ -64,8 +68,20 @@ spec:
           {{- with .Values.deployment.envFrom }}
             {{- . | toYaml | nindent 12 }}
           {{- end }}
-          {{- with .Values.deployment.env }}
-          env: {{ . | toYaml | nindent 12 }}
+          {{- end }}
+          {{- if or .Values.deployment.env .Values.deployment.tmpVolume.enabled }}
+          env:
+            {{- if .Values.deployment.tmpVolume.enabled }}
+            - name: XDG_CACHE_HOME
+              value: /tmp/.cache
+            - name: XDG_CONFIG_HOME
+              value: /tmp/.config
+            - name: XDG_DATA_HOME
+              value: /tmp/.local/share
+            {{- end }}
+            {{- with .Values.deployment.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
           ports:
             - name: {{ .Values.service.name }}
@@ -95,8 +111,15 @@ spec:
               port: 8080
               scheme: HTTP
             {{- toYaml .Values.deployment.readinessProbe | nindent 12 }}
-          {{- with .Values.deployment.volumeMounts }}
-          volumeMounts: {{ . | toYaml | nindent 12 }}
+          {{- if or .Values.deployment.volumeMounts .Values.deployment.tmpVolume.enabled }}
+          volumeMounts:
+            {{- if .Values.deployment.tmpVolume.enabled }}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
+            {{- with .Values.deployment.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
       {{- with .Values.deployment.nodeSelector }}
       nodeSelector:
@@ -110,6 +133,13 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.deployment.volumes }}
-      volumes: {{ . | toYaml | nindent 8 }}
+      {{- if or .Values.deployment.volumes .Values.deployment.tmpVolume.enabled }}
+      volumes:
+        {{- if .Values.deployment.tmpVolume.enabled }}
+        - name: tmp
+          emptyDir: {{ .Values.deployment.tmpVolume.emptyDir | toJson }}
+        {{- end }}
+        {{- with .Values.deployment.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- end }}

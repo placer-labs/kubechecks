@@ -1,0 +1,26 @@
+suite: rbac
+
+templates:
+  - templates/clusterrole.yaml
+
+tests:
+  - it: does not grant cluster-wide secret access by default
+    asserts:
+      - equal:
+          path: rules
+          value:
+            - apiGroups: ["argoproj.io"]
+              resources: ["applications", "appprojects", "applicationsets"]
+              verbs: ["get", "list", "watch"]
+
+  - it: grants cluster-wide secret access when opted in
+    set:
+      rbac:
+        clusterWideSecrets: true
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: ["secrets"]
+            verbs: ["get", "list", "watch"]
