@@ -17,10 +17,11 @@ spec:
       {{- if or .Values.configMap.create .Values.secrets.create .Values.deployment.podAnnotations }}
       annotations:
       {{- if .Values.configMap.create }}
-        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- /* Hash the data only, so a chart bump or label change doesn't roll the pods. */}}
+        checksum/config: {{ .Values.configMap.env | toJson | sha256sum }}
       {{- end }}
       {{- if .Values.secrets.create }}
-        checksum/secret: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+        checksum/secret: {{ .Values.secrets.env | toJson | sha256sum }}
       {{- end }}
       {{- with .Values.deployment.podAnnotations }}
         {{- toYaml . | nindent 8 }}

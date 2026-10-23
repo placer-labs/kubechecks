@@ -34,7 +34,6 @@ Create chart name and version as used by the chart label.
 Common labels
 */}}
 {{- define "kubechecks.labels" -}}
-helm.sh/chart: {{ include "kubechecks.chart" . }}
 {{ include "kubechecks.selectorLabels" . }}
 app.kubernetes.io/version: {{ .Values.deployment.image.tag }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}

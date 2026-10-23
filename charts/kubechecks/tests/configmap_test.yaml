@@ -31,4 +31,3 @@ tests:
             app.kubernetes.io/managed-by: Helm
             app.kubernetes.io/name: kubechecks
             app.kubernetes.io/version: 1.0.0
-            helm.sh/chart: kubechecks-0.1.0
