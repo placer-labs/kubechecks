@@ -100,7 +100,16 @@ func CreateGithubClient(ctx context.Context, cfg config.ServerConfig) (*Client, 
 		client.appTokenSource = appTransport
 	}
 
-	if client.username == "" || client.email == "" {
+	if cfg.IsGithubApp() {
+		if client.username == "" {
+			login, err := appBotLogin(ctx, cfg)
+			if err != nil {
+				log.Warn().Err(err).Msg("failed to resolve GitHub App bot login")
+			} else {
+				client.username = login
+			}
+		}
+	} else if client.username == "" || client.email == "" {
 		user, _, err := googleClient.Users.Get(ctx, "")
 		if err == nil {
 			if user.Login != nil {
@@ -121,6 +130,33 @@ func CreateGithubClient(ctx context.Context, cfg config.ServerConfig) (*Client, 
 	}
 
 	return client, nil
+}
+
+// appBotLogin returns the login GitHub attributes the App's activity to. Installation
+// tokens cannot read /user, so the slug is fetched with an app JWT instead.
+func appBotLogin(ctx context.Context, cfg config.ServerConfig) (string, error) {
+	appsTransport, err := ghinstallation.NewAppsTransport(http.DefaultTransport, cfg.GithubAppID, []byte(cfg.GithubPrivateKey))
+	if err != nil {
+		return "", errors.Wrap(err, "failed to create github app jwt transport")
+	}
+
+	appsClient := github.NewClient(&http.Client{Transport: appsTransport})
+	if cfg.VcsBaseUrl != "" && cfg.VcsUploadUrl != "" {
+		appsClient, err = appsClient.WithEnterpriseURLs(cfg.VcsBaseUrl, cfg.VcsUploadUrl)
+		if err != nil {
+			return "", errors.Wrap(err, "failed to create github enterprise apps client")
+		}
+	}
+
+	app, _, err := appsClient.Apps.Get(ctx, "")
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get github app")
+	}
+	if app.GetSlug() == "" {
+		return "", errors.New("github app has no slug")
+	}
+
+	return app.GetSlug() + "[bot]", nil
 }
 
 // createHttpClient returns the authenticated http.Client used by the go-github SDK.
