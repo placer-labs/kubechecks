@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/argoproj/argo-cd/v3/pkg/apiclient"
 	"github.com/argoproj/argo-cd/v3/pkg/apiclient/application"
@@ -13,6 +14,7 @@ import (
 	repoapiclient "github.com/argoproj/argo-cd/v3/reposerver/apiclient"
 	"github.com/argoproj/argo-cd/v3/util/db"
 	argosettings "github.com/argoproj/argo-cd/v3/util/settings"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	client "github.com/zapier/kubechecks/pkg/kubernetes"
@@ -97,35 +99,49 @@ func (a *ArgoClient) createRepoServerClient() (repoapiclient.RepoServerServiceCl
 	return repoapiclient.NewRepoServerServiceClient(conn), conn, nil
 }
 
+var newClientBackOff = func() backoff.BackOff {
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = time.Second
+	b.MaxInterval = 15 * time.Second
+	b.MaxElapsedTime = 2 * time.Minute
+	return b
+}
+
+func newClientWithRetry[T any](name string, newClient func() (io.Closer, T, error)) (io.Closer, T) {
+	var (
+		closer io.Closer
+		c      T
+	)
+	err := backoff.RetryNotify(
+		func() error {
+			var err error
+			closer, c, err = newClient()
+			return err
+		},
+		newClientBackOff(),
+		func(err error, wait time.Duration) {
+			log.Warn().Err(err).Dur("retry_in", wait).Msgf("could not create ArgoCD %s, retrying", name)
+		},
+	)
+	if err != nil {
+		log.Fatal().Err(err).Msgf("could not create ArgoCD %s", name)
+	}
+	return closer, c
+}
+
 // GetApplicationClient has related argocd diff code https://github.com/argoproj/argo-cd/blob/d3ff9757c460ae1a6a11e1231251b5d27aadcdd1/cmd/argocd/commands/app.go#L899
 func (a *ArgoClient) GetApplicationClient() (io.Closer, application.ApplicationServiceClient) {
-	closer, appClient, err := a.client.NewApplicationClient()
-	if err != nil {
-		log.Fatal().Err(err).Msg("could not create ArgoCD Application Client")
-	}
-	return closer, appClient
+	return newClientWithRetry("Application Client", a.client.NewApplicationClient)
 }
 
 func (a *ArgoClient) GetApplicationSetClient() (io.Closer, applicationset.ApplicationSetServiceClient) {
-	closer, appClient, err := a.client.NewApplicationSetClient()
-	if err != nil {
-		log.Fatal().Err(err).Msg("could not create ArgoCD Application Set Client")
-	}
-	return closer, appClient
+	return newClientWithRetry("Application Set Client", a.client.NewApplicationSetClient)
 }
 
 func (a *ArgoClient) GetSettingsClient() (io.Closer, settings.SettingsServiceClient) {
-	closer, appClient, err := a.client.NewSettingsClient()
-	if err != nil {
-		log.Fatal().Err(err).Msg("could not create ArgoCD Settings Client")
-	}
-	return closer, appClient
+	return newClientWithRetry("Settings Client", a.client.NewSettingsClient)
 }
 
 func (a *ArgoClient) GetClusterClient() (io.Closer, cluster.ClusterServiceClient) {
-	closer, clusterClient, err := a.client.NewClusterClient()
-	if err != nil {
-		log.Fatal().Err(err).Msg("could not create ArgoCD Cluster Client")
-	}
-	return closer, clusterClient
+	return newClientWithRetry("Cluster Client", a.client.NewClusterClient)
 }

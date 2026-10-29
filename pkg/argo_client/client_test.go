@@ -2,9 +2,13 @@ package argo_client
 
 import (
 	"context"
+	"errors"
+	"io"
 	"runtime"
 	"testing"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -39,4 +43,23 @@ func TestArgoDBIsShared(t *testing.T) {
 
 	assert.Same(t, a.ArgoDB(), a.ArgoDB())
 	assert.LessOrEqual(t, runtime.NumGoroutine(), baseline+5)
+}
+
+func TestNewClientWithRetry(t *testing.T) {
+	orig := newClientBackOff
+	t.Cleanup(func() { newClientBackOff = orig })
+	newClientBackOff = func() backoff.BackOff { return backoff.NewConstantBackOff(time.Millisecond) }
+
+	calls := 0
+	closer, got := newClientWithRetry("Test Client", func() (io.Closer, string, error) {
+		calls++
+		if calls < 3 {
+			return nil, "", errors.New("dial tcp: connect: connection timed out")
+		}
+		return io.NopCloser(nil), "client", nil
+	})
+
+	assert.Equal(t, 3, calls)
+	assert.Equal(t, "client", got)
+	assert.NotNil(t, closer)
 }
