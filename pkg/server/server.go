@@ -50,7 +50,7 @@ func NewServer(ctr container.Container, processors []checks.ProcessorEntry, aiRe
 	}
 
 	queueManager := queue.NewQueueManager(
-		queue.Config{QueueSize: queueSize},
+		queue.Config{QueueSize: queueSize, CheckTimeout: ctr.Config.CheckTimeout},
 		ProcessCheckEvent,
 	)
 

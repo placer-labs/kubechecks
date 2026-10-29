@@ -35,27 +35,30 @@ type CheckRequest struct {
 
 // RepoQueue manages a queue of check requests for a single repository
 type RepoQueue struct {
-	repoURL     string
-	queue       chan *CheckRequest
-	done        chan struct{}
-	wg          sync.WaitGroup
-	mu          sync.Mutex
-	queuedAt    time.Time
-	processed   int
-	processFunc ProcessFunc
+	repoURL      string
+	queue        chan *CheckRequest
+	done         chan struct{}
+	wg           sync.WaitGroup
+	mu           sync.Mutex
+	queuedAt     time.Time
+	processed    int
+	checkTimeout time.Duration
+	processFunc  ProcessFunc
 }
 
 // QueueManager manages all repository queues
 type QueueManager struct {
-	queues      map[string]*RepoQueue
-	mu          sync.RWMutex
-	queueSize   int
-	processFunc ProcessFunc
+	queues       map[string]*RepoQueue
+	mu           sync.RWMutex
+	queueSize    int
+	checkTimeout time.Duration
+	processFunc  ProcessFunc
 }
 
 // Config holds queue manager configuration
 type Config struct {
-	QueueSize int
+	QueueSize    int
+	CheckTimeout time.Duration
 }
 
 // NewQueueManager creates a new queue manager
@@ -65,9 +68,10 @@ func NewQueueManager(cfg Config, processFunc ProcessFunc) *QueueManager {
 	}
 
 	return &QueueManager{
-		queues:      make(map[string]*RepoQueue),
-		queueSize:   cfg.QueueSize,
-		processFunc: processFunc,
+		queues:       make(map[string]*RepoQueue),
+		queueSize:    cfg.QueueSize,
+		checkTimeout: cfg.CheckTimeout,
+		processFunc:  processFunc,
 	}
 }
 
@@ -102,11 +106,12 @@ func (qm *QueueManager) Enqueue(ctx context.Context, params EnqueueParams) error
 		queue, exists = qm.queues[repoKey]
 		if !exists {
 			queue = &RepoQueue{
-				repoURL:     params.PullRequest.CloneURL,
-				queue:       make(chan *CheckRequest, qm.queueSize),
-				done:        make(chan struct{}),
-				queuedAt:    time.Now(),
-				processFunc: qm.processFunc,
+				repoURL:      params.PullRequest.CloneURL,
+				queue:        make(chan *CheckRequest, qm.queueSize),
+				done:         make(chan struct{}),
+				queuedAt:     time.Now(),
+				checkTimeout: qm.checkTimeout,
+				processFunc:  qm.processFunc,
 			}
 			qm.queues[repoKey] = queue
 
@@ -260,8 +265,15 @@ func (rq *RepoQueue) processRequest(request *CheckRequest) {
 		Dur("queued_for", time.Since(request.Timestamp)).
 		Msg("worker processing request")
 
+	ctx := context.Background()
+	if rq.checkTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, rq.checkTimeout)
+		defer cancel()
+	}
+
 	err := rq.processFunc(
-		context.Background(),
+		ctx,
 		request.PullRequest,
 		request.Container,
 		request.Processors,

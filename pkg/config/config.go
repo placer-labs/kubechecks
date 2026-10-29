@@ -118,6 +118,7 @@ type ServerConfig struct {
 	ArchiveCacheDir          string        `mapstructure:"archive-cache-dir"`
 	ArchiveCacheTTL          time.Duration `mapstructure:"archive-cache-ttl"`
 	ShutdownTimeout          time.Duration `mapstructure:"shutdown-timeout"`
+	CheckTimeout             time.Duration `mapstructure:"check-timeout"`
 	// SchemasLocations are searched, in order, for the schema of each resource. An
 	// absolute path, an http(s) location or a git url addresses something outside the
 	// pull request; a relative path names a directory inside the repository being
