@@ -110,6 +110,7 @@ func (m *Manager) Clone(ctx context.Context, cloneURL, branchName string, pr vcs
 		CloneURL:       cloneURL,
 		Directory:      extractedPath,
 		BaseBranchName: branchName,
+		MergeCommitSHA: mergeCommitSHA,
 		// Note: No TempBranch needed - archives are immutable snapshots
 	}
 

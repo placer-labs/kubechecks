@@ -356,6 +356,7 @@ func (ce *CheckEvent) Process(ctx context.Context) error {
 		}
 		return errors.Wrap(err, "failed to download archive")
 	}
+	defer ce.ctr.ArchiveManager.Release(repo.CloneURL, repo.MergeCommitSHA)
 
 	// Store the archived repo in clonedRepos map so getRepo() can find it
 	// This prevents workers from re-cloning with git
