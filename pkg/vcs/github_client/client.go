@@ -178,11 +178,11 @@ func createHttpClient(cfg config.ServerConfig) (*http.Client, *ghinstallation.Tr
 			return nil, nil, errors.Wrap(err, "failed to create github app transport")
 		}
 		if cfg.VcsBaseUrl != "" && cfg.VcsUploadUrl != "" {
-			enterprise, err := github.NewClient(nil).WithEnterpriseURLs(cfg.VcsBaseUrl, cfg.VcsUploadUrl)
+			enterprise, err := github.NewClient(github.WithEnterpriseURLs(cfg.VcsBaseUrl, cfg.VcsUploadUrl))
 			if err != nil {
 				return nil, nil, errors.Wrap(err, "failed to parse github enterprise urls")
 			}
-			appTransport.BaseURL = strings.TrimSuffix(enterprise.BaseURL.String(), "/")
+			appTransport.BaseURL = strings.TrimSuffix(enterprise.BaseURL(), "/")
 		}
 
 		return &http.Client{Transport: appTransport}, appTransport, nil
