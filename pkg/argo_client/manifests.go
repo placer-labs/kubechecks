@@ -320,6 +320,7 @@ func (a *ArgoClient) generateManifests(ctx context.Context, app v1alpha1.Applica
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to package application")
 			}
+			defer pkg.WithErrorLogging(func() error { return os.RemoveAll(packageDir) }, "failed to remove package dir")
 		}
 	}
 
@@ -334,6 +335,7 @@ func (a *ArgoClient) generateManifests(ctx context.Context, app v1alpha1.Applica
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress files: %w", err)
 	}
+	defer tgzstream.CloseAndDelete(f)
 	log.Debug().Caller().Str("app", app.Name).Msgf("%d files compressed", filesWritten)
 	//if filesWritten == 0 {
 	//	return nil, fmt.Errorf("no files to send")
