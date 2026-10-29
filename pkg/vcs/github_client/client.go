@@ -285,10 +285,22 @@ func (c *Client) buildRepo(pullRequest *github.PullRequest) vcs.PullRequest {
 // headRevision names the PR head in the base repository. A fork's branch name
 // means nothing there, so fork PRs are identified by their head SHA instead.
 func headRevision(pr *github.PullRequest) string {
-	if !strings.EqualFold(pr.GetHead().GetRepo().GetFullName(), pr.GetBase().GetRepo().GetFullName()) {
+	if isFork(pr) {
 		return pr.GetHead().GetSHA()
 	}
 	return pr.GetHead().GetRef()
+}
+
+func isFork(pr *github.PullRequest) bool {
+	return !strings.EqualFold(pr.GetHead().GetRepo().GetFullName(), pr.GetBase().GetRepo().GetFullName())
+}
+
+func (c *Client) rejectFork(pr *github.PullRequest) bool {
+	if c.cfg.AllowForkPullRequests || !isFork(pr) {
+		return false
+	}
+	log.Info().Int("pr", pr.GetNumber()).Msg("ignoring pull request from a fork; set allow-fork-pull-requests to check it")
+	return true
 }
 
 func (c *Client) buildRepoFromEvent(event *github.PullRequestEvent) vcs.PullRequest {
@@ -305,6 +317,9 @@ func (c *Client) buildRepoFromComment(context context.Context, comment *github.I
 	pr, _, err := c.googleClient.PullRequests.Get(context, owner, repoName, prNumber)
 	if err != nil {
 		return nilPr, errors.Wrap(err, "failed to get pull request")
+	}
+	if c.rejectFork(pr) {
+		return nilPr, vcs.ErrInvalidType
 	}
 
 	return c.buildRepo(pr), nil

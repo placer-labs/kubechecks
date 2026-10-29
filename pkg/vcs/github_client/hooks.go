@@ -36,6 +36,9 @@ func (c *Client) ParseHook(ctx context.Context, r *http.Request, request []byte)
 
 	switch p := payload.(type) {
 	case *github.PullRequestEvent:
+		if c.rejectFork(p.GetPullRequest()) {
+			return nilPr, vcs.ErrInvalidType
+		}
 		switch p.GetAction() {
 		case "opened", "synchronize", "reopened":
 			log.Info().Str("action", p.GetAction()).Msg("handling Github event from PR")

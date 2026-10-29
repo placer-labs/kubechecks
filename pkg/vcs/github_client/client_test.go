@@ -400,7 +400,7 @@ func TestClient_buildRepoFromComment_HappyPath(t *testing.T) {
 						&github.Response{Response: &http.Response{StatusCode: http.StatusOK}},
 						nil},
 				),
-				cfg:      config.ServerConfig{},
+				cfg:      config.ServerConfig{AllowForkPullRequests: true},
 				username: "unittestuser",
 				email:    "unitestuser@localhost.local",
 			},
@@ -777,7 +777,10 @@ func TestParseHook_ForkPullRequestTargetsBaseRepo(t *testing.T) {
 		"head":{"ref":"patch-1","sha":"forksha","repo":{"name":"repo","full_name":"contributor/repo","clone_url":"https://github.com/contributor/repo.git","default_branch":"main","fork":true,"owner":{"login":"contributor"}}},
 		"base":{"ref":"main","sha":"basesha","repo":{"name":"repo","full_name":"upstream/repo","clone_url":"https://github.com/upstream/repo.git","default_branch":"main","owner":{"login":"upstream"}}}}}`
 
-	pr, err := parseHook(t, &Client{}, "pull_request", body)
+	_, err := parseHook(t, &Client{}, "pull_request", body)
+	assert.ErrorIs(t, err, vcs.ErrInvalidType, "fork pull requests are ignored unless allowed")
+
+	pr, err := parseHook(t, &Client{cfg: config.ServerConfig{AllowForkPullRequests: true}}, "pull_request", body)
 	require.NoError(t, err)
 
 	assert.Equal(t, "upstream", pr.Owner)
