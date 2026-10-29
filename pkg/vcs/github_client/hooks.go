@@ -163,7 +163,7 @@ func (c *Client) LoadHook(ctx context.Context, id string) (vcs.PullRequest, erro
 
 	if pullRequest.Base != nil {
 		baseRef = unPtr(pullRequest.Base.Ref)
-		headRef = unPtr(pullRequest.Head.Ref)
+		headRef = headRevision(pullRequest)
 	}
 
 	if repoInfo.Owner != nil {

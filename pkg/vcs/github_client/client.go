@@ -251,7 +251,7 @@ func (c *Client) GitCredentials(ctx context.Context) (string, string, error) {
 var nilPr vcs.PullRequest
 
 func (c *Client) buildRepo(pullRequest *github.PullRequest) vcs.PullRequest {
-	repo := pullRequest.Head.Repo
+	repo := pullRequest.GetBase().GetRepo()
 
 	var labels []string
 	for _, label := range pullRequest.Labels {
@@ -259,15 +259,15 @@ func (c *Client) buildRepo(pullRequest *github.PullRequest) vcs.PullRequest {
 	}
 
 	return vcs.PullRequest{
-		BaseRef:       pullRequest.Base.GetRef(),
-		HeadRef:       pullRequest.Head.GetRef(),
+		BaseRef:       pullRequest.GetBase().GetRef(),
+		HeadRef:       headRevision(pullRequest),
 		DefaultBranch: repo.GetDefaultBranch(),
 		CloneURL:      repo.GetCloneURL(),
 		FullName:      repo.GetFullName(),
-		Owner:         repo.Owner.GetLogin(),
+		Owner:         repo.GetOwner().GetLogin(),
 		Name:          repo.GetName(),
 		CheckID:       pullRequest.GetNumber(),
-		SHA:           pullRequest.Head.GetSHA(),
+		SHA:           pullRequest.GetHead().GetSHA(),
 		Username:      c.username,
 		Email:         c.email,
 		Labels:        labels,
@@ -276,6 +276,15 @@ func (c *Client) buildRepo(pullRequest *github.PullRequest) vcs.PullRequest {
 
 		Config: c.cfg,
 	}
+}
+
+// headRevision names the PR head in the base repository. A fork's branch name
+// means nothing there, so fork PRs are identified by their head SHA instead.
+func headRevision(pr *github.PullRequest) string {
+	if !strings.EqualFold(pr.GetHead().GetRepo().GetFullName(), pr.GetBase().GetRepo().GetFullName()) {
+		return pr.GetHead().GetSHA()
+	}
+	return pr.GetHead().GetRef()
 }
 
 func (c *Client) buildRepoFromEvent(event *github.PullRequestEvent) vcs.PullRequest {
