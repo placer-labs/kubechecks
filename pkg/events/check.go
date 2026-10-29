@@ -76,6 +76,9 @@ type CheckEvent struct {
 	aiReviewCount       int32 // atomic counter for AI reviews claimed
 	aiReviewSkipped     int32 // atomic counter for AI reviews skipped due to cap
 
+	superseded     bool
+	finalStatusSet bool
+
 	appsSent   int32
 	appChannel chan *v1alpha1.Application
 	wg         sync.WaitGroup
@@ -324,6 +327,34 @@ func (ce *CheckEvent) getRepo(ctx context.Context, cloneURL, branchName string) 
 }
 
 func (ce *CheckEvent) Process(ctx context.Context) error {
+	return ce.settle(ctx, ce.process(ctx))
+}
+
+func (ce *CheckEvent) settle(ctx context.Context, err error) error {
+	switch {
+	case ce.superseded:
+		return nil
+	case errors.Is(context.Cause(ctx), pkg.ErrCheckSuperseded):
+		ce.logger.Info().Msg("check cancelled, the PR has a newer commit")
+		return nil
+	case ce.finalStatusSet:
+	case err != nil:
+		ce.finalStatus(ctx, pkg.StateError)
+	default:
+		ce.finalStatus(ctx, pkg.StateSkip)
+	}
+	return err
+}
+
+// finalStatus sets the commit status even when ctx is already cancelled, so a
+// check that stops early never leaves its status pending.
+func (ce *CheckEvent) finalStatus(ctx context.Context, status pkg.CommitState) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	ce.CommitStatus(ctx, status)
+}
+
+func (ce *CheckEvent) process(ctx context.Context) error {
 	start := time.Now()
 
 	_, span := tracer.Start(ctx, "GenerateListOfAffectedApps")
@@ -343,6 +374,7 @@ func (ce *CheckEvent) Process(ctx context.Context) error {
 		}
 		return errors.Wrap(err, "Failed to validate pull request for archive processing")
 	}
+	ce.CommitStatus(ctx, pkg.StateRunning)
 
 	// Download and extract archive (contains merged state)
 	repo, err = ce.ctr.ArchiveManager.Clone(ctx, ce.pullRequest.CloneURL, ce.pullRequest.BaseRef, ce.pullRequest)
@@ -571,6 +603,7 @@ func (ce *CheckEvent) isSuperseded(ctx context.Context) bool {
 		Str("check_sha", ce.pullRequest.SHA).
 		Str("head_sha", headSHA).
 		Msg("PR has a newer commit, skipping this check's results")
+	ce.superseded = true
 	return true
 }
 
@@ -580,6 +613,9 @@ func (ce *CheckEvent) CommitStatus(ctx context.Context, status pkg.CommitState) 
 	_, span := tracer.Start(ctx, "CommitStatus")
 	defer span.End()
 
+	if status != pkg.StateRunning {
+		ce.finalStatusSet = true
+	}
 	if err := ce.ctr.VcsClient.CommitStatus(ctx, ce.pullRequest, status); err != nil {
 		log.Warn().Err(err).Msg("failed to update commit status")
 	}
