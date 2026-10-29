@@ -6,8 +6,9 @@ package github_client
 
 import (
 	"context"
+	"iter"
 
-	"github.com/google/go-github/v74/github"
+	"github.com/google/go-github/v93/github"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -480,58 +481,41 @@ func (_c *MockPullRequestsServices_List_Call) RunAndReturn(run func(ctx context.
 	return _c
 }
 
-// ListComments provides a mock function for the type MockPullRequestsServices
-func (_mock *MockPullRequestsServices) ListComments(ctx context.Context, owner string, repo string, number int, opts *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error) {
+// ListCommentsIter provides a mock function for the type MockPullRequestsServices
+func (_mock *MockPullRequestsServices) ListCommentsIter(ctx context.Context, owner string, repo string, number int, opts *github.PullRequestListCommentsOptions) iter.Seq2[*github.PullRequestComment, error] {
 	ret := _mock.Called(ctx, owner, repo, number, opts)
 
 	if len(ret) == 0 {
-		panic("no return value specified for ListComments")
+		panic("no return value specified for ListCommentsIter")
 	}
 
-	var r0 []*github.PullRequestComment
-	var r1 *github.Response
-	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error)); ok {
-		return returnFunc(ctx, owner, repo, number, opts)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, *github.PullRequestListCommentsOptions) []*github.PullRequestComment); ok {
+	var r0 iter.Seq2[*github.PullRequestComment, error]
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, *github.PullRequestListCommentsOptions) iter.Seq2[*github.PullRequestComment, error]); ok {
 		r0 = returnFunc(ctx, owner, repo, number, opts)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]*github.PullRequestComment)
+			r0 = ret.Get(0).(iter.Seq2[*github.PullRequestComment, error])
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, int, *github.PullRequestListCommentsOptions) *github.Response); ok {
-		r1 = returnFunc(ctx, owner, repo, number, opts)
-	} else {
-		if ret.Get(1) != nil {
-			r1 = ret.Get(1).(*github.Response)
-		}
-	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, string, string, int, *github.PullRequestListCommentsOptions) error); ok {
-		r2 = returnFunc(ctx, owner, repo, number, opts)
-	} else {
-		r2 = ret.Error(2)
-	}
-	return r0, r1, r2
+	return r0
 }
 
-// MockPullRequestsServices_ListComments_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListComments'
-type MockPullRequestsServices_ListComments_Call struct {
+// MockPullRequestsServices_ListCommentsIter_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListCommentsIter'
+type MockPullRequestsServices_ListCommentsIter_Call struct {
 	*mock.Call
 }
 
-// ListComments is a helper method to define mock.On call
+// ListCommentsIter is a helper method to define mock.On call
 //   - ctx context.Context
 //   - owner string
 //   - repo string
 //   - number int
 //   - opts *github.PullRequestListCommentsOptions
-func (_e *MockPullRequestsServices_Expecter) ListComments(ctx interface{}, owner interface{}, repo interface{}, number interface{}, opts interface{}) *MockPullRequestsServices_ListComments_Call {
-	return &MockPullRequestsServices_ListComments_Call{Call: _e.mock.On("ListComments", ctx, owner, repo, number, opts)}
+func (_e *MockPullRequestsServices_Expecter) ListCommentsIter(ctx interface{}, owner interface{}, repo interface{}, number interface{}, opts interface{}) *MockPullRequestsServices_ListCommentsIter_Call {
+	return &MockPullRequestsServices_ListCommentsIter_Call{Call: _e.mock.On("ListCommentsIter", ctx, owner, repo, number, opts)}
 }
 
-func (_c *MockPullRequestsServices_ListComments_Call) Run(run func(ctx context.Context, owner string, repo string, number int, opts *github.PullRequestListCommentsOptions)) *MockPullRequestsServices_ListComments_Call {
+func (_c *MockPullRequestsServices_ListCommentsIter_Call) Run(run func(ctx context.Context, owner string, repo string, number int, opts *github.PullRequestListCommentsOptions)) *MockPullRequestsServices_ListCommentsIter_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -564,68 +548,51 @@ func (_c *MockPullRequestsServices_ListComments_Call) Run(run func(ctx context.C
 	return _c
 }
 
-func (_c *MockPullRequestsServices_ListComments_Call) Return(pullRequestComments []*github.PullRequestComment, response *github.Response, err error) *MockPullRequestsServices_ListComments_Call {
-	_c.Call.Return(pullRequestComments, response, err)
+func (_c *MockPullRequestsServices_ListCommentsIter_Call) Return(seq2 iter.Seq2[*github.PullRequestComment, error]) *MockPullRequestsServices_ListCommentsIter_Call {
+	_c.Call.Return(seq2)
 	return _c
 }
 
-func (_c *MockPullRequestsServices_ListComments_Call) RunAndReturn(run func(ctx context.Context, owner string, repo string, number int, opts *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error)) *MockPullRequestsServices_ListComments_Call {
+func (_c *MockPullRequestsServices_ListCommentsIter_Call) RunAndReturn(run func(ctx context.Context, owner string, repo string, number int, opts *github.PullRequestListCommentsOptions) iter.Seq2[*github.PullRequestComment, error]) *MockPullRequestsServices_ListCommentsIter_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// ListFiles provides a mock function for the type MockPullRequestsServices
-func (_mock *MockPullRequestsServices) ListFiles(ctx context.Context, owner string, repo string, number int, opts *github.ListOptions) ([]*github.CommitFile, *github.Response, error) {
+// ListFilesIter provides a mock function for the type MockPullRequestsServices
+func (_mock *MockPullRequestsServices) ListFilesIter(ctx context.Context, owner string, repo string, number int, opts *github.ListOptions) iter.Seq2[*github.CommitFile, error] {
 	ret := _mock.Called(ctx, owner, repo, number, opts)
 
 	if len(ret) == 0 {
-		panic("no return value specified for ListFiles")
+		panic("no return value specified for ListFilesIter")
 	}
 
-	var r0 []*github.CommitFile
-	var r1 *github.Response
-	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, *github.ListOptions) ([]*github.CommitFile, *github.Response, error)); ok {
-		return returnFunc(ctx, owner, repo, number, opts)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, *github.ListOptions) []*github.CommitFile); ok {
+	var r0 iter.Seq2[*github.CommitFile, error]
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, int, *github.ListOptions) iter.Seq2[*github.CommitFile, error]); ok {
 		r0 = returnFunc(ctx, owner, repo, number, opts)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]*github.CommitFile)
+			r0 = ret.Get(0).(iter.Seq2[*github.CommitFile, error])
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, int, *github.ListOptions) *github.Response); ok {
-		r1 = returnFunc(ctx, owner, repo, number, opts)
-	} else {
-		if ret.Get(1) != nil {
-			r1 = ret.Get(1).(*github.Response)
-		}
-	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, string, string, int, *github.ListOptions) error); ok {
-		r2 = returnFunc(ctx, owner, repo, number, opts)
-	} else {
-		r2 = ret.Error(2)
-	}
-	return r0, r1, r2
+	return r0
 }
 
-// MockPullRequestsServices_ListFiles_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListFiles'
-type MockPullRequestsServices_ListFiles_Call struct {
+// MockPullRequestsServices_ListFilesIter_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListFilesIter'
+type MockPullRequestsServices_ListFilesIter_Call struct {
 	*mock.Call
 }
 
-// ListFiles is a helper method to define mock.On call
+// ListFilesIter is a helper method to define mock.On call
 //   - ctx context.Context
 //   - owner string
 //   - repo string
 //   - number int
 //   - opts *github.ListOptions
-func (_e *MockPullRequestsServices_Expecter) ListFiles(ctx interface{}, owner interface{}, repo interface{}, number interface{}, opts interface{}) *MockPullRequestsServices_ListFiles_Call {
-	return &MockPullRequestsServices_ListFiles_Call{Call: _e.mock.On("ListFiles", ctx, owner, repo, number, opts)}
+func (_e *MockPullRequestsServices_Expecter) ListFilesIter(ctx interface{}, owner interface{}, repo interface{}, number interface{}, opts interface{}) *MockPullRequestsServices_ListFilesIter_Call {
+	return &MockPullRequestsServices_ListFilesIter_Call{Call: _e.mock.On("ListFilesIter", ctx, owner, repo, number, opts)}
 }
 
-func (_c *MockPullRequestsServices_ListFiles_Call) Run(run func(ctx context.Context, owner string, repo string, number int, opts *github.ListOptions)) *MockPullRequestsServices_ListFiles_Call {
+func (_c *MockPullRequestsServices_ListFilesIter_Call) Run(run func(ctx context.Context, owner string, repo string, number int, opts *github.ListOptions)) *MockPullRequestsServices_ListFilesIter_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -658,12 +625,12 @@ func (_c *MockPullRequestsServices_ListFiles_Call) Run(run func(ctx context.Cont
 	return _c
 }
 
-func (_c *MockPullRequestsServices_ListFiles_Call) Return(commitFiles []*github.CommitFile, response *github.Response, err error) *MockPullRequestsServices_ListFiles_Call {
-	_c.Call.Return(commitFiles, response, err)
+func (_c *MockPullRequestsServices_ListFilesIter_Call) Return(seq2 iter.Seq2[*github.CommitFile, error]) *MockPullRequestsServices_ListFilesIter_Call {
+	_c.Call.Return(seq2)
 	return _c
 }
 
-func (_c *MockPullRequestsServices_ListFiles_Call) RunAndReturn(run func(ctx context.Context, owner string, repo string, number int, opts *github.ListOptions) ([]*github.CommitFile, *github.Response, error)) *MockPullRequestsServices_ListFiles_Call {
+func (_c *MockPullRequestsServices_ListFilesIter_Call) RunAndReturn(run func(ctx context.Context, owner string, repo string, number int, opts *github.ListOptions) iter.Seq2[*github.CommitFile, error]) *MockPullRequestsServices_ListFilesIter_Call {
 	_c.Call.Return(run)
 	return _c
 }

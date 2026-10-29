@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"iter"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/google/go-github/v74/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,23 +41,23 @@ func failNext(failures *[]int) (*github.Response, error) {
 	return &github.Response{Response: &http.Response{StatusCode: code}}, errors.New(http.StatusText(code))
 }
 
-func (f *fakeIssues) EditComment(_ context.Context, _, _ string, id int64, comment *github.IssueComment) (*github.IssueComment, *github.Response, error) {
+func (f *fakeIssues) UpdateComment(_ context.Context, _, _ string, id int64, body github.IssueCommentRequest) (*github.IssueComment, *github.Response, error) {
 	if resp, err := failNext(&f.editFailures); err != nil {
 		return nil, resp, err
 	}
 	if f.edited == nil {
 		f.edited = map[int64]string{}
 	}
-	f.edited[id] = comment.GetBody()
-	return comment, nil, nil
+	f.edited[id] = body.Body
+	return &github.IssueComment{ID: github.Ptr(id), Body: github.Ptr(body.Body)}, nil, nil
 }
 
-func (f *fakeIssues) CreateComment(_ context.Context, _, _ string, _ int, comment *github.IssueComment) (*github.IssueComment, *github.Response, error) {
+func (f *fakeIssues) CreateComment(_ context.Context, _, _ string, _ int, body github.IssueCommentRequest) (*github.IssueComment, *github.Response, error) {
 	if resp, err := failNext(&f.createFailures); err != nil {
 		return nil, resp, err
 	}
-	f.created = append(f.created, comment.GetBody())
-	return comment, nil, nil
+	f.created = append(f.created, body.Body)
+	return &github.IssueComment{Body: github.Ptr(body.Body)}, nil, nil
 }
 
 func newMessageClient(issues *fakeIssues) *Client {
@@ -138,14 +139,17 @@ type fakeCommentList struct {
 	deleted []int64
 }
 
-func (f *fakeCommentList) ListComments(_ context.Context, _, _ string, _ int, opts *github.IssueListCommentsOptions) ([]*github.IssueComment, *github.Response, error) {
-	f.perPage = append(f.perPage, opts.PerPage)
-	page := max(opts.Page, 1)
-	resp := &github.Response{Response: &http.Response{StatusCode: http.StatusOK}}
-	if page < len(f.pages) {
-		resp.NextPage = page + 1
+func (f *fakeCommentList) ListCommentsIter(_ context.Context, _, _ string, _ int, opts *github.IssueListCommentsOptions) iter.Seq2[*github.IssueComment, error] {
+	return func(yield func(*github.IssueComment, error) bool) {
+		for _, page := range f.pages {
+			f.perPage = append(f.perPage, opts.PerPage)
+			for _, c := range page {
+				if !yield(c, nil) {
+					return
+				}
+			}
+		}
 	}
-	return f.pages[page-1], resp, nil
 }
 
 func (f *fakeCommentList) DeleteComment(_ context.Context, _, _ string, id int64) (*github.Response, error) {

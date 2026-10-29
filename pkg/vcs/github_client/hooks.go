@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/google/go-github/v74/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 
@@ -80,34 +80,18 @@ func (c *Client) ParseHook(ctx context.Context, r *http.Request, request []byte)
 
 func (c *Client) GetHookByUrl(ctx context.Context, ownerAndRepoName, webhookUrl string) (*vcs.WebHookConfig, error) {
 	owner, repoName := parseRepo(ownerAndRepoName)
-	opts := &github.ListOptions{PerPage: 100}
-
-	for {
-		items, resp, err := c.googleClient.Repositories.ListHooks(ctx, owner, repoName, opts)
+	for item, err := range c.googleClient.Repositories.ListHooksIter(ctx, owner, repoName, &github.ListOptions{PerPage: 100}) {
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to list hooks")
 		}
-
-		for _, item := range items {
-			itemConfig := item.GetConfig()
-			// check if the hook's config has a URL
-			hookPayloadURL := ""
-			if itemConfig != nil {
-				hookPayloadURL = itemConfig.GetURL()
-			}
-			if hookPayloadURL == webhookUrl {
-				return &vcs.WebHookConfig{
-					Url:    hookPayloadURL,
-					Events: item.Events, // TODO: translate GH specific event names to VCS agnostic
-				}, nil
-			}
+		if hookPayloadURL := item.GetConfig().GetURL(); hookPayloadURL == webhookUrl {
+			return &vcs.WebHookConfig{
+				Url:    hookPayloadURL,
+				Events: item.Events, // TODO: translate GH specific event names to VCS agnostic
+			}, nil
 		}
-
-		if resp == nil || resp.NextPage == 0 {
-			return nil, vcs.ErrHookNotFound
-		}
-		opts.Page = resp.NextPage
 	}
+	return nil, vcs.ErrHookNotFound
 }
 
 func (c *Client) CreateHook(ctx context.Context, ownerAndRepoName, webhookUrl, webhookSecret string) error {

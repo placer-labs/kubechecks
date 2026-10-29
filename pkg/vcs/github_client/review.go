@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/go-github/v74/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/rs/zerolog/log"
 
 	"github.com/zapier/kubechecks/pkg"
@@ -98,35 +98,27 @@ type existingComment struct {
 func (c *Client) listExistingReviewComments(ctx context.Context, pr vcs.PullRequest) ([]existingComment, error) {
 	var all []existingComment
 	opts := &github.PullRequestListCommentsOptions{
-		Sort:      "created",
-		Direction: "desc",
+		Sort:        "created",
+		Direction:   "desc",
+		ListOptions: github.ListOptions{PerPage: 100},
 	}
 
-	for {
-		comments, resp, err := c.googleClient.PullRequests.ListComments(ctx, pr.Owner, pr.Name, pr.CheckID, opts)
+	for comment, err := range c.googleClient.PullRequests.ListCommentsIter(ctx, pr.Owner, pr.Name, pr.CheckID, opts) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to list review comments: %w", err)
 		}
-
-		for _, comment := range comments {
-			if !strings.EqualFold(comment.GetUser().GetLogin(), c.username) {
-				continue
-			}
-			suggestion := extractSuggestionBlock(comment.GetBody())
-			if suggestion == "" {
-				continue // not a suggestion comment
-			}
-			all = append(all, existingComment{
-				Path:       comment.GetPath(),
-				Line:       comment.GetLine(),
-				Suggestion: suggestion,
-			})
+		if !strings.EqualFold(comment.GetUser().GetLogin(), c.username) {
+			continue
 		}
-
-		if resp.NextPage == 0 {
-			break
+		suggestion := extractSuggestionBlock(comment.GetBody())
+		if suggestion == "" {
+			continue // not a suggestion comment
 		}
-		opts.Page = resp.NextPage
+		all = append(all, existingComment{
+			Path:       comment.GetPath(),
+			Line:       comment.GetLine(),
+			Suggestion: suggestion,
+		})
 	}
 
 	log.Debug().Caller().

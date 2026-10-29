@@ -3,7 +3,7 @@ package github_client
 import (
 	"context"
 
-	"github.com/google/go-github/v74/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/rs/zerolog/log"
 
 	"github.com/zapier/kubechecks/pkg"
@@ -28,7 +28,7 @@ func toGithubCommitStatus(state pkg.CommitState) *string {
 
 func (c *Client) CommitStatus(ctx context.Context, pr vcs.PullRequest, status pkg.CommitState) error {
 	log.Info().Str("repo", pr.Name).Str("sha", pr.SHA).Str("status", status.BareString()).Msg("setting Github commit status")
-	repoStatus, _, err := c.googleClient.Repositories.CreateStatus(ctx, pr.Owner, pr.Name, pr.SHA, &github.RepoStatus{
+	repoStatus, _, err := c.googleClient.Repositories.CreateStatus(ctx, pr.Owner, pr.Name, pr.SHA, github.RepoStatus{
 		State:       toGithubCommitStatus(status),
 		Description: pkg.Pointer(status.BareString()),
 		ID:          pkg.Pointer(int64(pr.CheckID)),
