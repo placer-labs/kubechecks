@@ -1391,3 +1391,38 @@ func TestClient_LoadHook_ForkUsesHeadSHA(t *testing.T) {
 	assert.Equal(t, "main", pr.BaseRef)
 	assert.Equal(t, "upstream", pr.Owner)
 }
+
+func TestClient_GetHookByUrl_Paginates(t *testing.T) {
+	hook := func(url string) *github.Hook {
+		return &github.Hook{Config: &github.HookConfig{URL: github.Ptr(url)}, Events: []string{"pull_request"}}
+	}
+	page := func(next int) *github.Response {
+		return &github.Response{NextPage: next, Response: &http.Response{StatusCode: http.StatusOK}}
+	}
+	onPage := func(n int) interface{} {
+		return mock.MatchedBy(func(opts *github.ListOptions) bool { return opts.PerPage == 100 && opts.Page == n })
+	}
+
+	t.Run("found on a later page", func(t *testing.T) {
+		mockRepos := githubMocks.NewMockRepositoriesServices(t)
+		mockRepos.On("ListHooks", mock.Anything, "owner", "repo", onPage(0)).Return([]*github.Hook{hook("https://other.local")}, page(2), nil).Once()
+		mockRepos.On("ListHooks", mock.Anything, "owner", "repo", onPage(2)).Return([]*github.Hook{hook("https://hooks.local")}, page(0), nil).Once()
+
+		c := &Client{googleClient: &GClient{Repositories: mockRepos}}
+		got, err := c.GetHookByUrl(context.Background(), "https://github.com/owner/repo.git", "https://hooks.local")
+
+		require.NoError(t, err)
+		assert.Equal(t, "https://hooks.local", got.Url)
+	})
+
+	t.Run("not found on any page", func(t *testing.T) {
+		mockRepos := githubMocks.NewMockRepositoriesServices(t)
+		mockRepos.On("ListHooks", mock.Anything, "owner", "repo", onPage(0)).Return([]*github.Hook{hook("https://other.local")}, page(2), nil).Once()
+		mockRepos.On("ListHooks", mock.Anything, "owner", "repo", onPage(2)).Return([]*github.Hook{}, page(0), nil).Once()
+
+		c := &Client{googleClient: &GClient{Repositories: mockRepos}}
+		_, err := c.GetHookByUrl(context.Background(), "https://github.com/owner/repo.git", "https://hooks.local")
+
+		assert.ErrorIs(t, err, vcs.ErrHookNotFound)
+	})
+}
