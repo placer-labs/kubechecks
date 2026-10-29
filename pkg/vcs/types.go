@@ -25,6 +25,8 @@ type Client interface {
 	VerifyHook(*http.Request, string) ([]byte, error)
 	// ParseHook parses webook payload for valid events, with context for request-scoped values
 	ParseHook(context.Context, *http.Request, []byte) (PullRequest, error)
+	// GetPullRequestHeadSHA returns the PR/MR's current head commit, which moves on every push
+	GetPullRequestHeadSHA(ctx context.Context, pr PullRequest) (string, error)
 	// CommitStatus sets a status for a specific commit on the remote VCS
 	CommitStatus(context.Context, PullRequest, pkg.CommitState) error
 	// GetHookByUrl gets a webhook by url

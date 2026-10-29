@@ -157,3 +157,11 @@ func (c *Client) DownloadArchive(ctx context.Context, pr vcs.PullRequest) (strin
 
 	return archiveURL, nil
 }
+
+func (c *Client) GetPullRequestHeadSHA(ctx context.Context, pr vcs.PullRequest) (string, error) {
+	ghPR, _, err := c.googleClient.PullRequests.Get(ctx, pr.Owner, pr.Name, pr.CheckID)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get PR details")
+	}
+	return ghPR.GetHead().GetSHA(), nil
+}
