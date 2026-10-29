@@ -1,14 +1,18 @@
 package argo_client
 
 import (
+	"context"
 	"crypto/tls"
 	"io"
+	"sync"
 
 	"github.com/argoproj/argo-cd/v3/pkg/apiclient"
 	"github.com/argoproj/argo-cd/v3/pkg/apiclient/application"
 	"github.com/argoproj/argo-cd/v3/pkg/apiclient/applicationset"
 	"github.com/argoproj/argo-cd/v3/pkg/apiclient/settings"
 	repoapiclient "github.com/argoproj/argo-cd/v3/reposerver/apiclient"
+	"github.com/argoproj/argo-cd/v3/util/db"
+	argosettings "github.com/argoproj/argo-cd/v3/util/settings"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	client "github.com/zapier/kubechecks/pkg/kubernetes"
@@ -27,6 +31,10 @@ type ArgoClient struct {
 	k8s       kubernetes.Interface
 	k8sConfig *rest.Config
 	cfg       config.ServerConfig
+
+	argoDBOnce  sync.Once
+	settingsMgr *argosettings.SettingsManager
+	argoDB      db.ArgoDB
 }
 
 func NewArgoClient(
@@ -59,6 +67,20 @@ func NewArgoClient(
 		k8s:       k8s.ClientSet(),
 		k8sConfig: k8s.Config(),
 	}, nil
+}
+
+// ArgoDB returns a shared ArgoDB; its SettingsManager's informers live for the process.
+func (a *ArgoClient) ArgoDB() db.ArgoDB {
+	_, argoDB := a.argoSettings()
+	return argoDB
+}
+
+func (a *ArgoClient) argoSettings() (*argosettings.SettingsManager, db.ArgoDB) {
+	a.argoDBOnce.Do(func() {
+		a.settingsMgr = argosettings.NewSettingsManager(context.Background(), a.k8s, a.cfg.ArgoCDNamespace)
+		a.argoDB = db.NewDB(a.cfg.ArgoCDNamespace, a.settingsMgr, a.k8s)
+	})
+	return a.settingsMgr, a.argoDB
 }
 
 func (a *ArgoClient) createRepoServerClient() (repoapiclient.RepoServerServiceClient, *grpc.ClientConn, error) {

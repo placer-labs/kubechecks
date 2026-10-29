@@ -151,10 +151,14 @@ func getGenerators(c client.Client, namespace string, repos services.Repos) map[
 // generation) and reads repository credentials from argocd Secrets/ConfigMaps
 // via the SettingsManager.
 func newRepoService(ctx context.Context, ctr *container.Container) services.Repos {
-	k8s := ctr.KubeClientSet.ClientSet()
-	ns := ctr.Config.ArgoCDNamespace
-	settingsMgr := argosettings.NewSettingsManager(ctx, k8s, ns)
-	argoDB := db.NewDB(ns, settingsMgr, k8s)
+	var argoDB db.ArgoDB
+	if ctr.ArgoClient != nil {
+		argoDB = ctr.ArgoClient.ArgoDB()
+	} else {
+		k8s := ctr.KubeClientSet.ClientSet()
+		ns := ctr.Config.ArgoCDNamespace
+		argoDB = db.NewDB(ns, argosettings.NewSettingsManager(ctx, k8s, ns), k8s)
+	}
 	repoClientset := apiclient.NewRepoServerClientset(
 		ctr.Config.ArgoCDRepositoryEndpoint,
 		0,

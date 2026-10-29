@@ -17,8 +17,6 @@ import (
 	"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	repoapiclient "github.com/argoproj/argo-cd/v3/reposerver/apiclient"
 	"github.com/argoproj/argo-cd/v3/util/argo"
-	"github.com/argoproj/argo-cd/v3/util/db"
-	argosettings "github.com/argoproj/argo-cd/v3/util/settings"
 	"github.com/argoproj/argo-cd/v3/util/tgzstream"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
@@ -163,8 +161,7 @@ func (a *ArgoClient) generateManifestForExternalChart(ctx context.Context, app v
 		return nil, errors.Wrap(err, "failed to get settings")
 	}
 
-	settingsMgr := argosettings.NewSettingsManager(ctx, a.k8s, a.cfg.ArgoCDNamespace)
-	argoDB := db.NewDB(a.cfg.ArgoCDNamespace, settingsMgr, a.k8s)
+	settingsMgr, argoDB := a.argoSettings()
 
 	helmRepos, err := argoDB.ListHelmRepositories(ctx)
 	if err != nil {
@@ -298,8 +295,7 @@ func (a *ArgoClient) generateManifests(ctx context.Context, app v1alpha1.Applica
 		return nil, errors.Wrap(err, "failed to get settings")
 	}
 
-	settingsMgr := argosettings.NewSettingsManager(ctx, a.k8s, a.cfg.ArgoCDNamespace)
-	argoDB := db.NewDB(a.cfg.ArgoCDNamespace, settingsMgr, a.k8s)
+	settingsMgr, argoDB := a.argoSettings()
 
 	var packageDir string
 
