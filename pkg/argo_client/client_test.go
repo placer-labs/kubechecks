@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"runtime"
 	"testing"
 	"time"
@@ -42,7 +43,7 @@ func TestArgoDBIsShared(t *testing.T) {
 	}
 
 	assert.Same(t, a.ArgoDB(), a.ArgoDB())
-	assert.LessOrEqual(t, runtime.NumGoroutine(), baseline+5)
+	assert.Less(t, runtime.NumGoroutine(), baseline+50, "a SettingsManager per call leaks ~28 goroutines each")
 }
 
 func TestNewClientWithRetry(t *testing.T) {
@@ -50,16 +51,42 @@ func TestNewClientWithRetry(t *testing.T) {
 	t.Cleanup(func() { newClientBackOff = orig })
 	newClientBackOff = func() backoff.BackOff { return backoff.NewConstantBackOff(time.Millisecond) }
 
-	calls := 0
-	closer, got := newClientWithRetry("Test Client", func() (io.Closer, string, error) {
-		calls++
-		if calls < 3 {
-			return nil, "", errors.New("dial tcp: connect: connection timed out")
-		}
-		return io.NopCloser(nil), "client", nil
+	dialErr := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connect: connection timed out")}
+
+	t.Run("retries transient dial errors", func(t *testing.T) {
+		calls := 0
+		closer, got, err := newClientWithRetry(context.Background(), "Test Client", func() (io.Closer, string, error) {
+			calls++
+			if calls < 3 {
+				return nil, "", dialErr
+			}
+			return io.NopCloser(nil), "client", nil
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 3, calls)
+		assert.Equal(t, "client", got)
+		assert.NotNil(t, closer)
 	})
 
-	assert.Equal(t, 3, calls)
-	assert.Equal(t, "client", got)
-	assert.NotNil(t, closer)
+	t.Run("does not retry permanent errors", func(t *testing.T) {
+		calls := 0
+		_, _, err := newClientWithRetry(context.Background(), "Test Client", func() (io.Closer, string, error) {
+			calls++
+			return nil, "", errors.New("invalid server address")
+		})
+		require.Error(t, err)
+		assert.Equal(t, 1, calls)
+	})
+
+	t.Run("stops when the context is cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		calls := 0
+		_, _, err := newClientWithRetry(ctx, "Test Client", func() (io.Closer, string, error) {
+			calls++
+			cancel()
+			return nil, "", dialErr
+		})
+		require.Error(t, err)
+		assert.Equal(t, 1, calls)
+	})
 }

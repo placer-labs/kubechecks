@@ -67,7 +67,10 @@ func QueryAppResourcesTool(argoClient *argo_client.ArgoClient) aireview.Tool {
 				return "", fmt.Errorf("invalid input: %w", err)
 			}
 
-			closer, appClient := argoClient.GetApplicationClient()
+			closer, appClient, err := argoClient.GetApplicationClient(ctx)
+			if err != nil {
+				return "", err
+			}
 			defer pkg.WithErrorLogging(closer.Close, "failed to close application connection")
 
 			resources, err := appClient.ManagedResources(ctx, &application.ResourcesQuery{
@@ -136,7 +139,10 @@ func GetAppResourceTool(argoClient *argo_client.ArgoClient) aireview.Tool {
 				return "Secret resources are excluded from AI review to prevent leaking sensitive data.", nil
 			}
 
-			closer, appClient := argoClient.GetApplicationClient()
+			closer, appClient, err := argoClient.GetApplicationClient(ctx)
+			if err != nil {
+				return "", err
+			}
 			defer pkg.WithErrorLogging(closer.Close, "failed to close application connection")
 
 			resources, err := appClient.ManagedResources(ctx, &application.ResourcesQuery{

@@ -262,7 +262,10 @@ func getResources(ctx context.Context, request checks.Request) ([]*argoappv1.Res
 	ctx, span := tracer.Start(ctx, "getResources")
 	defer span.End()
 
-	closer, appClient := request.Container.ArgoClient.GetApplicationClient()
+	closer, appClient, err := request.Container.ArgoClient.GetApplicationClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(closer.Close, "failed to close application connection")
 
 	resources, err := appClient.ManagedResources(ctx, &application.ResourcesQuery{
@@ -297,7 +300,10 @@ func getArgoSettings(ctx context.Context, request checks.Request) (*settings.Set
 	ctx, span := tracer.Start(ctx, "getArgoSettings")
 	defer span.End()
 
-	settingsCloser, settingsClient := request.Container.ArgoClient.GetSettingsClient()
+	settingsCloser, settingsClient, err := request.Container.ArgoClient.GetSettingsClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(settingsCloser.Close, "failed to close connection")
 
 	argoSettings, err := settingsClient.Get(ctx, &settings.SettingsQuery{})

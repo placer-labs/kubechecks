@@ -3,7 +3,9 @@ package argo_client
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
+	"net"
 	"sync"
 	"time"
 
@@ -107,7 +109,16 @@ var newClientBackOff = func() backoff.BackOff {
 	return b
 }
 
-func newClientWithRetry[T any](name string, newClient func() (io.Closer, T, error)) (io.Closer, T) {
+func isTransientDialError(err error) bool {
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) && dnsErr.IsNotFound {
+		return false
+	}
+	var opErr *net.OpError
+	return errors.As(err, &opErr)
+}
+
+func newClientWithRetry[T any](ctx context.Context, name string, newClient func() (io.Closer, T, error)) (io.Closer, T, error) {
 	var (
 		closer io.Closer
 		c      T
@@ -116,32 +127,35 @@ func newClientWithRetry[T any](name string, newClient func() (io.Closer, T, erro
 		func() error {
 			var err error
 			closer, c, err = newClient()
+			if err != nil && !isTransientDialError(err) {
+				return backoff.Permanent(err)
+			}
 			return err
 		},
-		newClientBackOff(),
+		backoff.WithContext(newClientBackOff(), ctx),
 		func(err error, wait time.Duration) {
 			log.Warn().Err(err).Dur("retry_in", wait).Msgf("could not create ArgoCD %s, retrying", name)
 		},
 	)
 	if err != nil {
-		log.Fatal().Err(err).Msgf("could not create ArgoCD %s", name)
+		return nil, c, fmt.Errorf("could not create ArgoCD %s: %w", name, err)
 	}
-	return closer, c
+	return closer, c, nil
 }
 
 // GetApplicationClient has related argocd diff code https://github.com/argoproj/argo-cd/blob/d3ff9757c460ae1a6a11e1231251b5d27aadcdd1/cmd/argocd/commands/app.go#L899
-func (a *ArgoClient) GetApplicationClient() (io.Closer, application.ApplicationServiceClient) {
-	return newClientWithRetry("Application Client", a.client.NewApplicationClient)
+func (a *ArgoClient) GetApplicationClient(ctx context.Context) (io.Closer, application.ApplicationServiceClient, error) {
+	return newClientWithRetry(ctx, "Application Client", a.client.NewApplicationClient)
 }
 
-func (a *ArgoClient) GetApplicationSetClient() (io.Closer, applicationset.ApplicationSetServiceClient) {
-	return newClientWithRetry("Application Set Client", a.client.NewApplicationSetClient)
+func (a *ArgoClient) GetApplicationSetClient(ctx context.Context) (io.Closer, applicationset.ApplicationSetServiceClient, error) {
+	return newClientWithRetry(ctx, "Application Set Client", a.client.NewApplicationSetClient)
 }
 
-func (a *ArgoClient) GetSettingsClient() (io.Closer, settings.SettingsServiceClient) {
-	return newClientWithRetry("Settings Client", a.client.NewSettingsClient)
+func (a *ArgoClient) GetSettingsClient(ctx context.Context) (io.Closer, settings.SettingsServiceClient, error) {
+	return newClientWithRetry(ctx, "Settings Client", a.client.NewSettingsClient)
 }
 
-func (a *ArgoClient) GetClusterClient() (io.Closer, cluster.ClusterServiceClient) {
-	return newClientWithRetry("Cluster Client", a.client.NewClusterClient)
+func (a *ArgoClient) GetClusterClient(ctx context.Context) (io.Closer, cluster.ClusterServiceClient, error) {
+	return newClientWithRetry(ctx, "Cluster Client", a.client.NewClusterClient)
 }

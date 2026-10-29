@@ -74,7 +74,10 @@ func serverSideDiff(ctx context.Context, request checks.Request, items []objKeyL
 		return nil, nil
 	}
 
-	closer, appClient := request.Container.ArgoClient.GetApplicationClient()
+	closer, appClient, err := request.Container.ArgoClient.GetApplicationClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(closer.Close, "failed to close app client")
 
 	app := request.App

@@ -145,7 +145,10 @@ func (a *ArgoClient) appInstanceName(app v1alpha1.Application, argoSettings *set
 // fetch the chart from the registry using its own credentials and OCI/Helm support.
 // This avoids needing a local copy of the chart and correctly handles chart dependencies.
 func (a *ArgoClient) generateManifestForExternalChart(ctx context.Context, app v1alpha1.Application, source v1alpha1.ApplicationSource, refs []v1alpha1.ApplicationSource) ([]string, error) {
-	clusterCloser, clusterClient := a.GetClusterClient()
+	clusterCloser, clusterClient, err := a.GetClusterClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(clusterCloser.Close, "failed to close connection")
 
 	clusterData, err := clusterClient.Get(ctx, &cluster.ClusterQuery{Name: app.Spec.Destination.Name, Server: app.Spec.Destination.Server})
@@ -153,7 +156,10 @@ func (a *ArgoClient) generateManifestForExternalChart(ctx context.Context, app v
 		return nil, errors.Wrap(err, "failed to get cluster")
 	}
 
-	settingsCloser, settingsClient := a.GetSettingsClient()
+	settingsCloser, settingsClient, err := a.GetSettingsClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(settingsCloser.Close, "failed to close connection")
 
 	argoSettings, err := settingsClient.Get(ctx, &settings.SettingsQuery{})
@@ -276,7 +282,10 @@ func (a *ArgoClient) generateManifests(ctx context.Context, app v1alpha1.Applica
 		return a.generateManifestForExternalChart(ctx, app, source, refs)
 	}
 
-	clusterCloser, clusterClient := a.GetClusterClient()
+	clusterCloser, clusterClient, err := a.GetClusterClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(clusterCloser.Close, "failed to close connection")
 
 	clusterData, err := clusterClient.Get(ctx, &cluster.ClusterQuery{Name: app.Spec.Destination.Name, Server: app.Spec.Destination.Server})
@@ -285,7 +294,10 @@ func (a *ArgoClient) generateManifests(ctx context.Context, app v1alpha1.Applica
 		return nil, errors.Wrap(err, "failed to get cluster")
 	}
 
-	settingsCloser, settingsClient := a.GetSettingsClient()
+	settingsCloser, settingsClient, err := a.GetSettingsClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(settingsCloser.Close, "failed to close connection")
 
 	log.Debug().Caller().Str("app", app.Name).Msg("get settings")
@@ -592,6 +604,12 @@ func packageApp(
 	if err != nil {
 		return "", errors.Wrap(err, "failed to make temp dir")
 	}
+	packaged := false
+	defer func() {
+		if !packaged {
+			pkg.WithErrorLogging(func() error { return os.RemoveAll(destDir) }, "failed to remove package dir")
+		}
+	}()
 
 	fsIface := filesys.MakeFsOnDisk()
 
@@ -687,6 +705,7 @@ func packageApp(
 		}
 	}
 
+	packaged = true
 	return destDir, nil
 }
 

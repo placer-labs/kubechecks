@@ -29,7 +29,10 @@ func (a *ArgoClient) GetApplicationByName(ctx context.Context, name string) (*v1
 	ctx, span := tracer.Start(ctx, "GetApplicationByName")
 	defer span.End()
 
-	closer, appClient := a.GetApplicationClient()
+	closer, appClient, err := a.GetApplicationClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(closer.Close, "failed to close connection")
 
 	resp, err := appClient.Get(ctx, &application.ApplicationQuery{Name: &name})
@@ -59,7 +62,10 @@ func (a *ArgoClient) GetKubernetesVersionByApplication(ctx context.Context, app 
 	}
 
 	// Get cluster client
-	clusterCloser, clusterClient := a.GetClusterClient()
+	clusterCloser, clusterClient, err := a.GetClusterClient(ctx)
+	if err != nil {
+		return "", err
+	}
 	defer pkg.WithErrorLogging(clusterCloser.Close, "failed to close cluster connection")
 
 	// Get cluster
@@ -90,7 +96,10 @@ func (a *ArgoClient) GetApplicationsByLabels(ctx context.Context, labels string)
 	ctx, span := tracer.Start(ctx, "GetApplicationsByLabels")
 	defer span.End()
 
-	closer, appClient := a.GetApplicationClient()
+	closer, appClient, err := a.GetApplicationClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(closer.Close, "failed to close connection")
 
 	resp, err := appClient.List(ctx, &application.ApplicationQuery{Selector: &labels})
@@ -113,7 +122,10 @@ func (a *ArgoClient) GetApplications(ctx context.Context) (*v1alpha1.Application
 	ctx, span := tracer.Start(ctx, "GetApplications")
 	defer span.End()
 
-	closer, appClient := a.GetApplicationClient()
+	closer, appClient, err := a.GetApplicationClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(closer.Close, "failed to close connection")
 
 	resp, err := appClient.List(ctx, new(application.ApplicationQuery))
@@ -128,7 +140,10 @@ func (a *ArgoClient) GetApplicationSets(ctx context.Context) (*v1alpha1.Applicat
 	ctx, span := tracer.Start(ctx, "GetApplications")
 	defer span.End()
 
-	closer, appClient := a.GetApplicationSetClient()
+	closer, appClient, err := a.GetApplicationSetClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(closer.Close, "failed to close connection")
 
 	resp, err := appClient.List(ctx, new(applicationset.ApplicationSetListQuery))

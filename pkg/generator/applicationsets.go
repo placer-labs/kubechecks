@@ -11,8 +11,6 @@ import (
 	"github.com/argoproj/argo-cd/v3/common"
 	argov1alpha1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/argoproj/argo-cd/v3/reposerver/apiclient"
-	"github.com/argoproj/argo-cd/v3/util/db"
-	argosettings "github.com/argoproj/argo-cd/v3/util/settings"
 	utiltls "github.com/argoproj/argo-cd/v3/util/tls"
 	"github.com/rs/zerolog/log"
 	"github.com/zapier/kubechecks/pkg"
@@ -51,7 +49,7 @@ func (c *gen) GenerateApplicationSetApps(ctx context.Context, appset argov1alpha
 		appset = overrideGitRevisionForPR(appset, pr.RepoURL, pr.HeadSHA)
 	}
 
-	repos := newRepoService(ctx, ctr)
+	repos := newRepoService(ctr)
 	appSetGenerators := getGenerators(*ctr.KubeClientSet.ControllerClient(), ctr.Config.ArgoCDNamespace, repos)
 
 	apps, appsetReason, err := generateApplications(appset, appSetGenerators, *ctr.KubeClientSet.ControllerClient())
@@ -150,15 +148,8 @@ func getGenerators(c client.Client, namespace string, repos services.Repos) map[
 // to argocd-repo-server over gRPC (kubechecks already does this for manifest
 // generation) and reads repository credentials from argocd Secrets/ConfigMaps
 // via the SettingsManager.
-func newRepoService(ctx context.Context, ctr *container.Container) services.Repos {
-	var argoDB db.ArgoDB
-	if ctr.ArgoClient != nil {
-		argoDB = ctr.ArgoClient.ArgoDB()
-	} else {
-		k8s := ctr.KubeClientSet.ClientSet()
-		ns := ctr.Config.ArgoCDNamespace
-		argoDB = db.NewDB(ns, argosettings.NewSettingsManager(ctx, k8s, ns), k8s)
-	}
+func newRepoService(ctr *container.Container) services.Repos {
+	argoDB := ctr.ArgoClient.ArgoDB()
 	repoClientset := apiclient.NewRepoServerClientset(
 		ctr.Config.ArgoCDRepositoryEndpoint,
 		0,
