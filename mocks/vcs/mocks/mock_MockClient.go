@@ -575,6 +575,72 @@ func (_c *MockClient_GetPullRequestFiles_Call) RunAndReturn(run func(ctx context
 	return _c
 }
 
+// GetPullRequestHeadSHA provides a mock function for the type MockClient
+func (_mock *MockClient) GetPullRequestHeadSHA(ctx context.Context, pr vcs.PullRequest) (string, error) {
+	ret := _mock.Called(ctx, pr)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetPullRequestHeadSHA")
+	}
+
+	var r0 string
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, vcs.PullRequest) (string, error)); ok {
+		return returnFunc(ctx, pr)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, vcs.PullRequest) string); ok {
+		r0 = returnFunc(ctx, pr)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, vcs.PullRequest) error); ok {
+		r1 = returnFunc(ctx, pr)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockClient_GetPullRequestHeadSHA_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetPullRequestHeadSHA'
+type MockClient_GetPullRequestHeadSHA_Call struct {
+	*mock.Call
+}
+
+// GetPullRequestHeadSHA is a helper method to define mock.On call
+//   - ctx context.Context
+//   - pr vcs.PullRequest
+func (_e *MockClient_Expecter) GetPullRequestHeadSHA(ctx interface{}, pr interface{}) *MockClient_GetPullRequestHeadSHA_Call {
+	return &MockClient_GetPullRequestHeadSHA_Call{Call: _e.mock.On("GetPullRequestHeadSHA", ctx, pr)}
+}
+
+func (_c *MockClient_GetPullRequestHeadSHA_Call) Run(run func(ctx context.Context, pr vcs.PullRequest)) *MockClient_GetPullRequestHeadSHA_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 vcs.PullRequest
+		if args[1] != nil {
+			arg1 = args[1].(vcs.PullRequest)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockClient_GetPullRequestHeadSHA_Call) Return(s string, err error) *MockClient_GetPullRequestHeadSHA_Call {
+	_c.Call.Return(s, err)
+	return _c
+}
+
+func (_c *MockClient_GetPullRequestHeadSHA_Call) RunAndReturn(run func(ctx context.Context, pr vcs.PullRequest) (string, error)) *MockClient_GetPullRequestHeadSHA_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GitCredentials provides a mock function for the type MockClient
 func (_mock *MockClient) GitCredentials(ctx context.Context) (string, string, error) {
 	ret := _mock.Called(ctx)

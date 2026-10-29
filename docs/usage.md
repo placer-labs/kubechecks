@@ -128,6 +128,7 @@ The full list of supported environment variables is described below:
 |`KUBECHECKS_ARGOCD_SERVER_SIDE_DIFF_CONCURRENCY`|Maximum concurrent server-side diff batches per application.|`4`|
 |`KUBECHECKS_ARGOCD_SERVER_SIDE_DIFF_MAX_BATCH_KB`|Maximum server-side diff request batch size in KB.|`250`|
 |`KUBECHECKS_CHART_CACHE_DIR`|Directory for caching downloaded Helm charts for AI review.|`/tmp/kubechecks/charts`|
+|`KUBECHECKS_CHECK_TIMEOUT`|Maximum time a single PR check may run before it is cancelled. 0 disables the limit.|`15m0s`|
 |`KUBECHECKS_ENABLE_AI_DIFF_SUMMARY`|Enable AI-powered diff summary. Requires openai-api-token or anthropic-api-key.|`false`|
 |`KUBECHECKS_ENABLE_AI_REVIEW`|Enable AI-powered impact review of manifest changes.|`false`|
 |`KUBECHECKS_ENABLE_CONFTEST`|Set to true to enable conftest policy checking of manifests.|`false`|

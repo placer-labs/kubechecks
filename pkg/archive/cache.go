@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
@@ -81,20 +80,15 @@ func NewCache(cfg Config) *Cache {
 // per attempt, they just don't wait through each other's backoff windows.
 func (c *Cache) GetOrDownload(ctx context.Context, archiveURL, mergeCommitSHA string, authHeaders map[string]string) (string, error) {
 	// Fast path: check cache before entering the retry loop.
-	c.lock.RLock()
-	entry, exists := c.entries[mergeCommitSHA]
-	c.lock.RUnlock()
-	if exists {
+	if path, ok := c.acquire(mergeCommitSHA); ok {
 		archiveCacheHits.Inc()
-		atomic.AddInt32(&entry.refCount, 1)
-		entry.lastUsed = time.Now()
 		log.Debug().
 			Caller().
 			Str("archive_url", archiveURL).
 			Str("merge_commit_sha", mergeCommitSHA).
-			Str("path", entry.extractedPath).
+			Str("path", path).
 			Msg("using cached archive")
-		return entry.extractedPath, nil
+		return path, nil
 	}
 
 	archiveCacheMisses.Inc()
@@ -143,8 +137,6 @@ func (c *Cache) GetOrDownload(ctx context.Context, archiveURL, mergeCommitSHA st
 			c.lock.RUnlock()
 			if exists {
 				archiveCacheHits.Inc()
-				atomic.AddInt32(&entry.refCount, 1)
-				entry.lastUsed = time.Now()
 				return entry.extractedPath, nil
 			}
 
@@ -162,7 +154,6 @@ func (c *Cache) GetOrDownload(ctx context.Context, archiveURL, mergeCommitSHA st
 			entry = &CacheEntry{
 				extractedPath: extractedPath,
 				lastUsed:      time.Now(),
-				refCount:      1,
 			}
 			c.lock.Lock()
 			c.entries[mergeCommitSHA] = entry
@@ -187,7 +178,10 @@ func (c *Cache) GetOrDownload(ctx context.Context, archiveURL, mergeCommitSHA st
 		}
 
 		if err == nil {
-			return result.(string), nil
+			if _, ok := c.acquire(mergeCommitSHA); ok {
+				return result.(string), nil
+			}
+			err = errors.New("archive was evicted before it could be used")
 		}
 
 		lastErr = err
@@ -218,19 +212,35 @@ func (c *Cache) GetOrDownload(ctx context.Context, archiveURL, mergeCommitSHA st
 	return "", errors.Wrap(lastErr, "failed to download and extract archive")
 }
 
+// acquire takes a reference on a cached archive under the write lock, so it
+// cannot interleave with cleanupStaleArchives.
+func (c *Cache) acquire(mergeCommitSHA string) (string, bool) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	entry, exists := c.entries[mergeCommitSHA]
+	if !exists {
+		return "", false
+	}
+	entry.refCount++
+	entry.lastUsed = time.Now()
+	return entry.extractedPath, true
+}
+
 // Release decrements the reference count for an archive
 func (c *Cache) Release(archiveURL, mergeCommitSHA string) {
 
-	c.lock.RLock()
+	c.lock.Lock()
 	entry, exists := c.entries[mergeCommitSHA]
-	c.lock.RUnlock()
-
 	if !exists {
+		c.lock.Unlock()
 		return
 	}
-
-	newCount := atomic.AddInt32(&entry.refCount, -1)
+	if entry.refCount > 0 {
+		entry.refCount--
+	}
 	entry.lastUsed = time.Now()
+	newCount := entry.refCount
+	c.lock.Unlock()
 
 	log.Debug().
 		Caller().
@@ -273,7 +283,7 @@ func (c *Cache) cleanupStaleArchives() {
 
 	for key, entry := range c.entries {
 		// Skip if archive is currently in use
-		if atomic.LoadInt32(&entry.refCount) > 0 {
+		if entry.refCount > 0 {
 			continue
 		}
 

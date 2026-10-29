@@ -17,8 +17,6 @@ import (
 	"github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	repoapiclient "github.com/argoproj/argo-cd/v3/reposerver/apiclient"
 	"github.com/argoproj/argo-cd/v3/util/argo"
-	"github.com/argoproj/argo-cd/v3/util/db"
-	argosettings "github.com/argoproj/argo-cd/v3/util/settings"
 	"github.com/argoproj/argo-cd/v3/util/tgzstream"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
@@ -147,7 +145,10 @@ func (a *ArgoClient) appInstanceName(app v1alpha1.Application, argoSettings *set
 // fetch the chart from the registry using its own credentials and OCI/Helm support.
 // This avoids needing a local copy of the chart and correctly handles chart dependencies.
 func (a *ArgoClient) generateManifestForExternalChart(ctx context.Context, app v1alpha1.Application, source v1alpha1.ApplicationSource, refs []v1alpha1.ApplicationSource) ([]string, error) {
-	clusterCloser, clusterClient := a.GetClusterClient()
+	clusterCloser, clusterClient, err := a.GetClusterClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(clusterCloser.Close, "failed to close connection")
 
 	clusterData, err := clusterClient.Get(ctx, &cluster.ClusterQuery{Name: app.Spec.Destination.Name, Server: app.Spec.Destination.Server})
@@ -155,7 +156,10 @@ func (a *ArgoClient) generateManifestForExternalChart(ctx context.Context, app v
 		return nil, errors.Wrap(err, "failed to get cluster")
 	}
 
-	settingsCloser, settingsClient := a.GetSettingsClient()
+	settingsCloser, settingsClient, err := a.GetSettingsClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(settingsCloser.Close, "failed to close connection")
 
 	argoSettings, err := settingsClient.Get(ctx, &settings.SettingsQuery{})
@@ -163,8 +167,7 @@ func (a *ArgoClient) generateManifestForExternalChart(ctx context.Context, app v
 		return nil, errors.Wrap(err, "failed to get settings")
 	}
 
-	settingsMgr := argosettings.NewSettingsManager(ctx, a.k8s, a.cfg.ArgoCDNamespace)
-	argoDB := db.NewDB(a.cfg.ArgoCDNamespace, settingsMgr, a.k8s)
+	settingsMgr, argoDB := a.argoSettings()
 
 	helmRepos, err := argoDB.ListHelmRepositories(ctx)
 	if err != nil {
@@ -279,7 +282,10 @@ func (a *ArgoClient) generateManifests(ctx context.Context, app v1alpha1.Applica
 		return a.generateManifestForExternalChart(ctx, app, source, refs)
 	}
 
-	clusterCloser, clusterClient := a.GetClusterClient()
+	clusterCloser, clusterClient, err := a.GetClusterClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(clusterCloser.Close, "failed to close connection")
 
 	clusterData, err := clusterClient.Get(ctx, &cluster.ClusterQuery{Name: app.Spec.Destination.Name, Server: app.Spec.Destination.Server})
@@ -288,7 +294,10 @@ func (a *ArgoClient) generateManifests(ctx context.Context, app v1alpha1.Applica
 		return nil, errors.Wrap(err, "failed to get cluster")
 	}
 
-	settingsCloser, settingsClient := a.GetSettingsClient()
+	settingsCloser, settingsClient, err := a.GetSettingsClient(ctx)
+	if err != nil {
+		return nil, err
+	}
 	defer pkg.WithErrorLogging(settingsCloser.Close, "failed to close connection")
 
 	log.Debug().Caller().Str("app", app.Name).Msg("get settings")
@@ -298,8 +307,7 @@ func (a *ArgoClient) generateManifests(ctx context.Context, app v1alpha1.Applica
 		return nil, errors.Wrap(err, "failed to get settings")
 	}
 
-	settingsMgr := argosettings.NewSettingsManager(ctx, a.k8s, a.cfg.ArgoCDNamespace)
-	argoDB := db.NewDB(a.cfg.ArgoCDNamespace, settingsMgr, a.k8s)
+	settingsMgr, argoDB := a.argoSettings()
 
 	var packageDir string
 
@@ -324,6 +332,7 @@ func (a *ArgoClient) generateManifests(ctx context.Context, app v1alpha1.Applica
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to package application")
 			}
+			defer pkg.WithErrorLogging(func() error { return os.RemoveAll(packageDir) }, "failed to remove package dir")
 		}
 	}
 
@@ -338,6 +347,7 @@ func (a *ArgoClient) generateManifests(ctx context.Context, app v1alpha1.Applica
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress files: %w", err)
 	}
+	defer tgzstream.CloseAndDelete(f)
 	log.Debug().Caller().Str("app", app.Name).Msgf("%d files compressed", filesWritten)
 	//if filesWritten == 0 {
 	//	return nil, fmt.Errorf("no files to send")
@@ -594,6 +604,12 @@ func packageApp(
 	if err != nil {
 		return "", errors.Wrap(err, "failed to make temp dir")
 	}
+	packaged := false
+	defer func() {
+		if !packaged {
+			pkg.WithErrorLogging(func() error { return os.RemoveAll(destDir) }, "failed to remove package dir")
+		}
+	}()
 
 	fsIface := filesys.MakeFsOnDisk()
 
@@ -689,6 +705,7 @@ func packageApp(
 		}
 	}
 
+	packaged = true
 	return destDir, nil
 }
 

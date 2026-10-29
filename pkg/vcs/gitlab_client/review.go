@@ -198,3 +198,11 @@ func extractGitLabSuggestionBlock(body string) string {
 
 	return body[contentStart : contentStart+endIdx]
 }
+
+func (c *Client) GetPullRequestHeadSHA(ctx context.Context, pr vcs.PullRequest) (string, error) {
+	mr, _, err := c.c.MergeRequests.GetMergeRequest(pr.FullName, int64(pr.CheckID), nil, gitlab.WithContext(ctx))
+	if err != nil {
+		return "", fmt.Errorf("failed to get merge request: %w", err)
+	}
+	return mr.SHA, nil
+}

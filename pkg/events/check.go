@@ -356,6 +356,7 @@ func (ce *CheckEvent) Process(ctx context.Context) error {
 		}
 		return errors.Wrap(err, "failed to download archive")
 	}
+	defer ce.ctr.ArchiveManager.Release(repo.CloneURL, repo.MergeCommitSHA)
 
 	// Store the archived repo in clonedRepos map so getRepo() can find it
 	// This prevents workers from re-cloning with git
@@ -393,6 +394,10 @@ func (ce *CheckEvent) Process(ctx context.Context) error {
 	// Generate a list of affected apps, storing them within the CheckEvent (also returns but discarded here)
 	if err = ce.GenerateListOfAffectedApps(ctx, repo, ce.pullRequest.BaseRef, generateMatcher); err != nil {
 		return errors.Wrap(err, "failed to generate a list of affected apps")
+	}
+
+	if ce.isSuperseded(ctx) {
+		return nil
 	}
 
 	if err = ce.ctr.VcsClient.TidyOutdatedComments(ctx, ce.pullRequest); err != nil {
@@ -549,6 +554,24 @@ func (ce *CheckEvent) queueApp(app v1alpha1.Application) {
 	logger.Debug().Caller().Msg("producing app on channel")
 	ce.appChannel <- &app
 	logger.Debug().Caller().Msg("finished producing app")
+}
+
+// isSuperseded reports whether the PR has moved past the commit this check is
+// for. Posting then would hide the newer check's comment behind a stale one.
+func (ce *CheckEvent) isSuperseded(ctx context.Context) bool {
+	headSHA, err := ce.ctr.VcsClient.GetPullRequestHeadSHA(ctx, ce.pullRequest)
+	if err != nil {
+		ce.logger.Warn().Err(err).Msg("could not read the PR head, posting results anyway")
+		return false
+	}
+	if headSHA == "" || headSHA == ce.pullRequest.SHA {
+		return false
+	}
+	ce.logger.Info().
+		Str("check_sha", ce.pullRequest.SHA).
+		Str("head_sha", headSHA).
+		Msg("PR has a newer commit, skipping this check's results")
+	return true
 }
 
 // CommitStatus sets the commit status on the MR

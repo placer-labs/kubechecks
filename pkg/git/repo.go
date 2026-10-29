@@ -37,6 +37,7 @@ type Repo struct {
 
 	TempBranch     string // Temporary branch name for isolated PR checks
 	BaseBranchName string // Original base branch (e.g., main/master)
+	MergeCommitSHA string // Archive cache key; set only for archive-mode repos
 }
 
 func New(cfg config.ServerConfig, cloneUrl, branchName string) *Repo {

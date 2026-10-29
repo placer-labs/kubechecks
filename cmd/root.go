@@ -143,6 +143,9 @@ func init() {
 	durationFlag(flags, "archive-cache-ttl", "Time-to-live for cached archives.",
 		newDurationOpts().
 			withDefault(1*time.Hour))
+	durationFlag(flags, "check-timeout", "Maximum time a single PR check may run before it is cancelled. 0 disables the limit.",
+		newDurationOpts().
+			withDefault(15*time.Minute))
 	durationFlag(flags, "shutdown-timeout", "How long to wait for in-flight checks and the HTTP server on SIGTERM. Keep it below the pod's terminationGracePeriodSeconds.",
 		newDurationOpts().
 			withDefault(30*time.Second))
