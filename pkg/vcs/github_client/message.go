@@ -25,7 +25,7 @@ const updateMessageTimeout = 10 * time.Minute
 func (c *Client) MaxCommentLength() int { return MaxCommentLength }
 
 func (c *Client) PostMessage(ctx context.Context, pr vcs.PullRequest, message string) (*msg.Message, error) {
-	_, span := tracer.Start(ctx, "PostMessageToMergeRequest")
+	ctx, span := tracer.Start(ctx, "PostMessageToMergeRequest")
 	defer span.End()
 
 	if len(message) > MaxCommentLength {
@@ -47,11 +47,11 @@ func (c *Client) PostMessage(ctx context.Context, pr vcs.PullRequest, message st
 		return nil, errors.Wrap(err, "could not post message to PR")
 	}
 
-	return msg.NewMessage(pr.FullName, pr.CheckID, int(*comment.ID), c), nil
+	return msg.NewMessage(pr.FullName, pr.CheckID, int(comment.GetID()), c), nil
 }
 
 func (c *Client) UpdateMessage(ctx context.Context, pr vcs.PullRequest, noteID int, chunks []string) error {
-	_, span := tracer.Start(ctx, "UpdateMessage")
+	ctx, span := tracer.Start(ctx, "UpdateMessage")
 	defer span.End()
 
 	ctx, cancel := context.WithTimeout(ctx, updateMessageTimeout)
@@ -90,18 +90,23 @@ func (c *Client) UpdateMessage(ctx context.Context, pr vcs.PullRequest, noteID i
 	return nil
 }
 
+func (c *Client) isOwnComment(comment *github.IssueComment) bool {
+	return strings.EqualFold(comment.GetUser().GetLogin(), c.username) ||
+		strings.Contains(comment.GetBody(), fmt.Sprintf("Kubechecks %s Report", c.cfg.Identifier))
+}
+
 // Pull all comments for the specified PR, and delete any comments that already exist from the bot
 // This is different from updating an existing message, as this will delete comments from previous runs of the bot
 // Whereas updates occur mid-execution
 func (c *Client) pruneOldComments(ctx context.Context, pr vcs.PullRequest, comments []*github.IssueComment) error {
-	_, span := tracer.Start(ctx, "pruneOldComments")
+	ctx, span := tracer.Start(ctx, "pruneOldComments")
 	defer span.End()
 
 	log.Debug().Caller().Msgf("Pruning messages from PR %d in repo %s", pr.CheckID, pr.FullName)
 
 	for _, comment := range comments {
-		if strings.EqualFold(comment.GetUser().GetLogin(), c.username) || strings.Contains(*comment.Body, fmt.Sprintf("Kubechecks %s Report", c.cfg.Identifier)) {
-			_, err := c.googleClient.Issues.DeleteComment(ctx, pr.Owner, pr.Name, *comment.ID)
+		if c.isOwnComment(comment) {
+			_, err := c.googleClient.Issues.DeleteComment(ctx, pr.Owner, pr.Name, comment.GetID())
 			if err != nil {
 				return fmt.Errorf("failed to delete comment: %w", err)
 			}
@@ -111,32 +116,86 @@ func (c *Client) pruneOldComments(ctx context.Context, pr vcs.PullRequest, comme
 	return nil
 }
 
+const minimizedLookupBatch = 100
+
+// minimizedComments reports which of the given comment node IDs are already minimized.
+// The REST API does not expose this, so it is looked up over GraphQL.
+func (c *Client) minimizedComments(ctx context.Context, nodeIDs []string) (map[string]bool, error) {
+	minimized := make(map[string]bool, len(nodeIDs))
+
+	for start := 0; start < len(nodeIDs); start += minimizedLookupBatch {
+		end := min(start+minimizedLookupBatch, len(nodeIDs))
+
+		ids := make([]githubv4.ID, 0, end-start)
+		for _, id := range nodeIDs[start:end] {
+			ids = append(ids, githubv4.ID(id))
+		}
+
+		var q struct {
+			Nodes []struct {
+				IssueComment struct {
+					ID          githubv4.ID
+					IsMinimized githubv4.Boolean
+				} `graphql:"... on IssueComment"`
+			} `graphql:"nodes(ids: $ids)"`
+		}
+		if err := c.shurcoolClient.Query(ctx, &q, map[string]any{"ids": ids}); err != nil {
+			return nil, fmt.Errorf("query comment minimized state: %w", err)
+		}
+
+		for _, node := range q.Nodes {
+			if id, ok := node.IssueComment.ID.(string); ok && bool(node.IssueComment.IsMinimized) {
+				minimized[id] = true
+			}
+		}
+	}
+
+	return minimized, nil
+}
+
 func (c *Client) hideOutdatedMessages(ctx context.Context, pr vcs.PullRequest, comments []*github.IssueComment) error {
-	_, span := tracer.Start(ctx, "hideOutdatedComments")
+	ctx, span := tracer.Start(ctx, "hideOutdatedComments")
 	defer span.End()
 
 	log.Debug().Caller().Msgf("Hiding kubecheck messages in PR %d in repo %s", pr.CheckID, pr.FullName)
 
+	var candidates []string
 	for _, comment := range comments {
-		if strings.EqualFold(comment.GetUser().GetLogin(), c.username) || strings.Contains(*comment.Body, fmt.Sprintf("Kubechecks %s Report", c.cfg.Identifier)) {
-			// Github API does not expose minimizeComment API. IT's only available from the GraphQL API
-			// https://docs.github.com/en/graphql/reference/mutations#minimizecomment
-			var m struct {
-				MinimizeComment struct {
-					MinimizedComment struct {
-						IsMinimized       githubv4.Boolean
-						MinimizedReason   githubv4.String
-						ViewerCanMinimize githubv4.Boolean
-					}
-				} `graphql:"minimizeComment(input:$input)"`
-			}
-			input := githubv4.MinimizeCommentInput{
-				Classifier: githubv4.ReportedContentClassifiersOutdated,
-				SubjectID:  comment.GetNodeID(),
-			}
-			if err := c.shurcoolClient.Mutate(ctx, &m, input, nil); err != nil {
-				return fmt.Errorf("minimize comment %s: %w", comment.GetNodeID(), err)
-			}
+		if c.isOwnComment(comment) && comment.GetNodeID() != "" {
+			candidates = append(candidates, comment.GetNodeID())
+		}
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	minimized, err := c.minimizedComments(ctx, candidates)
+	if err != nil {
+		return err
+	}
+
+	for _, nodeID := range candidates {
+		if minimized[nodeID] {
+			continue
+		}
+
+		// Github API does not expose minimizeComment API. IT's only available from the GraphQL API
+		// https://docs.github.com/en/graphql/reference/mutations#minimizecomment
+		var m struct {
+			MinimizeComment struct {
+				MinimizedComment struct {
+					IsMinimized       githubv4.Boolean
+					MinimizedReason   githubv4.String
+					ViewerCanMinimize githubv4.Boolean
+				}
+			} `graphql:"minimizeComment(input:$input)"`
+		}
+		input := githubv4.MinimizeCommentInput{
+			Classifier: githubv4.ReportedContentClassifiersOutdated,
+			SubjectID:  nodeID,
+		}
+		if err := c.shurcoolClient.Mutate(ctx, &m, input, nil); err != nil {
+			return fmt.Errorf("minimize comment %s: %w", nodeID, err)
 		}
 	}
 
@@ -145,7 +204,7 @@ func (c *Client) hideOutdatedMessages(ctx context.Context, pr vcs.PullRequest, c
 }
 
 func (c *Client) TidyOutdatedComments(ctx context.Context, pr vcs.PullRequest) error {
-	_, span := tracer.Start(ctx, "TidyOutdatedComments")
+	ctx, span := tracer.Start(ctx, "TidyOutdatedComments")
 	defer span.End()
 
 	var allComments []*github.IssueComment
@@ -155,7 +214,7 @@ func (c *Client) TidyOutdatedComments(ctx context.Context, pr vcs.PullRequest) e
 		comments, resp, err := c.googleClient.Issues.ListComments(ctx, pr.Owner, pr.Name, pr.CheckID, &github.IssueListCommentsOptions{
 			Sort:        pkg.Pointer("created"),
 			Direction:   pkg.Pointer("asc"),
-			ListOptions: github.ListOptions{Page: nextPage},
+			ListOptions: github.ListOptions{Page: nextPage, PerPage: 100},
 		})
 		if err != nil {
 			telemetry.SetError(span, err, "Get Issue Comments failed")

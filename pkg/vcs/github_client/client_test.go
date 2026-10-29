@@ -378,9 +378,9 @@ func TestClient_buildRepoFromComment_HappyPath(t *testing.T) {
 								Ref: github.Ptr("new-feature"),
 								SHA: github.Ptr("dummySHAHead"),
 								Repo: &github.Repository{
-									CloneURL:      github.Ptr("https://github.com/zapier/kubechecks/"),
-									DefaultBranch: github.Ptr("main"),
-									FullName:      github.Ptr("zapier/kubechecks"),
+									CloneURL:      github.Ptr("https://github.com/fork/kubechecks/"),
+									DefaultBranch: github.Ptr("fork-main"),
+									FullName:      github.Ptr("fork/kubechecks"),
 									Owner:         &github.User{Login: github.Ptr("fork")},
 									Name:          github.Ptr("kubechecks"),
 								},
@@ -389,15 +389,18 @@ func TestClient_buildRepoFromComment_HappyPath(t *testing.T) {
 								Ref: github.Ptr("main"),
 								SHA: github.Ptr("dummySHABase"),
 								Repo: &github.Repository{
-									CloneURL: github.Ptr("https://github.com/zapier/kubechecks/"),
-									Owner:    &github.User{Login: github.Ptr("zapier")},
+									CloneURL:      github.Ptr("https://github.com/zapier/kubechecks/"),
+									DefaultBranch: github.Ptr("main"),
+									FullName:      github.Ptr("zapier/kubechecks"),
+									Owner:         &github.User{Login: github.Ptr("zapier")},
+									Name:          github.Ptr("kubechecks"),
 								},
 							},
 						},
 						&github.Response{Response: &http.Response{StatusCode: http.StatusOK}},
 						nil},
 				),
-				cfg:      config.ServerConfig{},
+				cfg:      config.ServerConfig{AllowForkPullRequests: true},
 				username: "unittestuser",
 				email:    "unitestuser@localhost.local",
 			},
@@ -423,11 +426,11 @@ func TestClient_buildRepoFromComment_HappyPath(t *testing.T) {
 			},
 			want: vcs.PullRequest{
 				BaseRef:       "main",
-				HeadRef:       "new-feature",
+				HeadRef:       "dummySHAHead",
 				DefaultBranch: "main",
 				CloneURL:      "https://github.com/zapier/kubechecks/",
 				Name:          "kubechecks",
-				Owner:         "fork",
+				Owner:         "zapier",
 				CheckID:       123,
 				SHA:           "dummySHAHead",
 				FullName:      "zapier/kubechecks",
@@ -633,23 +636,25 @@ func TestClient_VerifyHook(t *testing.T) {
 }
 
 func TestClient_buildRepo(t *testing.T) {
+	sameRepo := &github.Repository{
+		DefaultBranch: github.Ptr("main"),
+		CloneURL:      github.Ptr("https://github.com/owner/repo.git"),
+		FullName:      github.Ptr("owner/repo"),
+		Name:          github.Ptr("repo"),
+		Owner: &github.User{
+			Login: github.Ptr("owner"),
+		},
+	}
 	pr := &github.PullRequest{
 		Number: github.Ptr(123),
 		Head: &github.PullRequestBranch{
-			Ref: github.Ptr("feature-branch"),
-			SHA: github.Ptr("abc123"),
-			Repo: &github.Repository{
-				DefaultBranch: github.Ptr("main"),
-				CloneURL:      github.Ptr("https://github.com/owner/repo.git"),
-				FullName:      github.Ptr("owner/repo"),
-				Name:          github.Ptr("repo"),
-				Owner: &github.User{
-					Login: github.Ptr("owner"),
-				},
-			},
+			Ref:  github.Ptr("feature-branch"),
+			SHA:  github.Ptr("abc123"),
+			Repo: sameRepo,
 		},
 		Base: &github.PullRequestBranch{
-			Ref: github.Ptr("main"),
+			Ref:  github.Ptr("main"),
+			Repo: sameRepo,
 		},
 		Labels: []*github.Label{
 			{Name: github.Ptr("bug")},
@@ -679,13 +684,123 @@ func TestClient_buildRepo(t *testing.T) {
 	assert.Equal(t, []string{"bug", "enhancement"}, result.Labels)
 }
 
+func TestClient_buildRepo_ForkTargetsBaseRepo(t *testing.T) {
+	pr := &github.PullRequest{
+		Number: github.Ptr(77),
+		Head: &github.PullRequestBranch{
+			Ref: github.Ptr("contributor-change"),
+			SHA: github.Ptr("forksha"),
+			Repo: &github.Repository{
+				DefaultBranch: github.Ptr("trunk"),
+				CloneURL:      github.Ptr("https://github.com/contributor/repo.git"),
+				FullName:      github.Ptr("contributor/repo"),
+				Name:          github.Ptr("repo-fork"),
+				Owner:         &github.User{Login: github.Ptr("contributor")},
+				Fork:          github.Ptr(true),
+			},
+		},
+		Base: &github.PullRequestBranch{
+			Ref: github.Ptr("main"),
+			SHA: github.Ptr("basesha"),
+			Repo: &github.Repository{
+				DefaultBranch: github.Ptr("main"),
+				CloneURL:      github.Ptr("https://github.com/upstream/repo.git"),
+				FullName:      github.Ptr("upstream/repo"),
+				Name:          github.Ptr("repo"),
+				Owner:         &github.User{Login: github.Ptr("upstream")},
+			},
+		},
+	}
+
+	result := (&Client{}).buildRepo(pr)
+
+	assert.Equal(t, "upstream", result.Owner)
+	assert.Equal(t, "repo", result.Name)
+	assert.Equal(t, "upstream/repo", result.FullName)
+	assert.Equal(t, "https://github.com/upstream/repo.git", result.CloneURL)
+	assert.Equal(t, "main", result.DefaultBranch)
+	assert.Equal(t, "main", result.BaseRef)
+	assert.Equal(t, "forksha", result.HeadRef)
+	assert.Equal(t, "forksha", result.SHA)
+	assert.Equal(t, 77, result.CheckID)
+}
+
+func TestClient_buildRepo_ForkBranchNamedLikeBaseBranch(t *testing.T) {
+	upstream := &github.Repository{
+		CloneURL: github.Ptr("https://github.com/upstream/repo.git"),
+		FullName: github.Ptr("upstream/repo"),
+		Name:     github.Ptr("repo"),
+		Owner:    &github.User{Login: github.Ptr("upstream")},
+	}
+	fork := &github.Repository{
+		CloneURL: github.Ptr("https://github.com/contributor/repo.git"),
+		FullName: github.Ptr("contributor/repo"),
+		Name:     github.Ptr("repo"),
+		Owner:    &github.User{Login: github.Ptr("contributor")},
+	}
+
+	for name, tc := range map[string]struct {
+		head        *github.Repository
+		headRef     string
+		wantHeadRef string
+	}{
+		"fork branch matches the base branch":     {head: fork, headRef: "main", wantHeadRef: "forksha"},
+		"fork branch matches another base branch": {head: fork, headRef: "release", wantHeadRef: "forksha"},
+		"deleted fork":                     {head: nil, headRef: "release", wantHeadRef: "forksha"},
+		"same repository keeps the branch": {head: upstream, headRef: "release", wantHeadRef: "release"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pr := &github.PullRequest{
+				Number: github.Ptr(5),
+				Head:   &github.PullRequestBranch{Ref: github.Ptr(tc.headRef), SHA: github.Ptr("forksha"), Repo: tc.head},
+				Base:   &github.PullRequestBranch{Ref: github.Ptr("main"), Repo: upstream},
+			}
+
+			result := (&Client{}).buildRepo(pr)
+
+			assert.Equal(t, tc.wantHeadRef, result.HeadRef)
+			assert.Equal(t, "https://github.com/upstream/repo.git", result.CloneURL)
+		})
+	}
+}
+
+func TestClient_buildRepo_MissingRepos(t *testing.T) {
+	result := (&Client{}).buildRepo(&github.PullRequest{Number: github.Ptr(1)})
+
+	assert.Equal(t, 1, result.CheckID)
+	assert.Empty(t, result.Owner)
+	assert.Empty(t, result.SHA)
+}
+
+func TestParseHook_ForkPullRequestTargetsBaseRepo(t *testing.T) {
+	body := `{"action":"opened","pull_request":{"number":12,
+		"head":{"ref":"patch-1","sha":"forksha","repo":{"name":"repo","full_name":"contributor/repo","clone_url":"https://github.com/contributor/repo.git","default_branch":"main","fork":true,"owner":{"login":"contributor"}}},
+		"base":{"ref":"main","sha":"basesha","repo":{"name":"repo","full_name":"upstream/repo","clone_url":"https://github.com/upstream/repo.git","default_branch":"main","owner":{"login":"upstream"}}}}}`
+
+	_, err := parseHook(t, &Client{}, "pull_request", body)
+	assert.ErrorIs(t, err, vcs.ErrInvalidType, "fork pull requests are ignored unless allowed")
+
+	pr, err := parseHook(t, &Client{cfg: config.ServerConfig{AllowForkPullRequests: true}}, "pull_request", body)
+	require.NoError(t, err)
+
+	assert.Equal(t, "upstream", pr.Owner)
+	assert.Equal(t, "upstream/repo", pr.FullName)
+	assert.Equal(t, "https://github.com/upstream/repo.git", pr.CloneURL)
+	assert.Equal(t, "forksha", pr.HeadRef)
+	assert.Equal(t, "forksha", pr.SHA)
+}
+
 func TestClient_buildRepoFromEvent(t *testing.T) {
 	event := &github.PullRequestEvent{
 		PullRequest: &github.PullRequest{
 			Number: github.Ptr(456),
 			Head: &github.PullRequestBranch{
-				Ref: github.Ptr("fix-bug"),
-				SHA: github.Ptr("def456"),
+				Ref:  github.Ptr("fix-bug"),
+				SHA:  github.Ptr("def456"),
+				Repo: &github.Repository{FullName: github.Ptr("org/project")},
+			},
+			Base: &github.PullRequestBranch{
+				Ref: github.Ptr("develop"),
 				Repo: &github.Repository{
 					DefaultBranch: github.Ptr("develop"),
 					CloneURL:      github.Ptr("https://github.com/org/project.git"),
@@ -695,9 +810,6 @@ func TestClient_buildRepoFromEvent(t *testing.T) {
 						Login: github.Ptr("org"),
 					},
 				},
-			},
-			Base: &github.PullRequestBranch{
-				Ref: github.Ptr("develop"),
 			},
 			Labels: []*github.Label{
 				{Name: github.Ptr("priority-high")},
@@ -1215,4 +1327,105 @@ func NewMockPullRequestsServicesWithGet(t *testing.T, responses ...prResponse) *
 	}
 
 	return mockPR
+}
+
+func listedFiles(n int) []*github.CommitFile {
+	files := make([]*github.CommitFile, n)
+	for i := range files {
+		files[i] = &github.CommitFile{Filename: github.Ptr(fmt.Sprintf("file%d.yaml", i))}
+	}
+	return files
+}
+
+func TestClient_GetPullRequestFiles_Truncated(t *testing.T) {
+	for name, tc := range map[string]struct {
+		listed, changed int
+		wantErr         string
+	}{
+		"truncated at the cap":  {listed: maxListedPullRequestFiles, changed: 3500, wantErr: "PR changes 3500 files but GitHub only lists the first 3000"},
+		"exactly at the cap":    {listed: maxListedPullRequestFiles, changed: maxListedPullRequestFiles},
+		"under the cap no call": {listed: 2999, changed: -1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			mockPR := githubMocks.NewMockPullRequestsServices(t)
+			mockPR.On("ListFiles", mock.Anything, "owner", "repo", 123,
+				mock.MatchedBy(func(opts *github.ListOptions) bool { return opts.PerPage == 100 }),
+			).Return(listedFiles(tc.listed), &github.Response{Response: &http.Response{StatusCode: 200}}, nil).Once()
+			if tc.changed >= 0 {
+				mockPR.On("Get", mock.Anything, "owner", "repo", 123).
+					Return(&github.PullRequest{ChangedFiles: github.Ptr(tc.changed)}, nil, nil).Once()
+			}
+
+			c := &Client{googleClient: &GClient{PullRequests: mockPR}}
+			files, err := c.GetPullRequestFiles(context.Background(), vcs.PullRequest{Owner: "owner", Name: "repo", CheckID: 123})
+
+			if tc.wantErr != "" {
+				require.EqualError(t, err, tc.wantErr)
+				assert.Nil(t, files)
+				return
+			}
+			require.NoError(t, err)
+			assert.Len(t, files, tc.listed)
+		})
+	}
+}
+
+func TestClient_LoadHook_ForkUsesHeadSHA(t *testing.T) {
+	mockRepos := githubMocks.NewMockRepositoriesServices(t)
+	mockRepos.On("Get", mock.Anything, "upstream", "repo").Return(&github.Repository{
+		FullName: github.Ptr("upstream/repo"),
+		Name:     github.Ptr("repo"),
+		Owner:    &github.User{Login: github.Ptr("upstream")},
+	}, nil, nil).Once()
+	mockPR := githubMocks.NewMockPullRequestsServices(t)
+	mockPR.On("Get", mock.Anything, "upstream", "repo", 5).Return(&github.PullRequest{
+		Number: github.Ptr(5),
+		Head: &github.PullRequestBranch{Ref: github.Ptr("main"), SHA: github.Ptr("forksha"),
+			Repo: &github.Repository{FullName: github.Ptr("contributor/repo")}},
+		Base: &github.PullRequestBranch{Ref: github.Ptr("main"),
+			Repo: &github.Repository{FullName: github.Ptr("upstream/repo")}},
+	}, nil, nil).Once()
+
+	c := &Client{googleClient: &GClient{Repositories: mockRepos, PullRequests: mockPR}}
+	pr, err := c.LoadHook(context.Background(), "upstream/repo#5")
+	require.NoError(t, err)
+
+	assert.Equal(t, "forksha", pr.HeadRef)
+	assert.Equal(t, "main", pr.BaseRef)
+	assert.Equal(t, "upstream", pr.Owner)
+}
+
+func TestClient_GetHookByUrl_Paginates(t *testing.T) {
+	hook := func(url string) *github.Hook {
+		return &github.Hook{Config: &github.HookConfig{URL: github.Ptr(url)}, Events: []string{"pull_request"}}
+	}
+	page := func(next int) *github.Response {
+		return &github.Response{NextPage: next, Response: &http.Response{StatusCode: http.StatusOK}}
+	}
+	onPage := func(n int) interface{} {
+		return mock.MatchedBy(func(opts *github.ListOptions) bool { return opts.PerPage == 100 && opts.Page == n })
+	}
+
+	t.Run("found on a later page", func(t *testing.T) {
+		mockRepos := githubMocks.NewMockRepositoriesServices(t)
+		mockRepos.On("ListHooks", mock.Anything, "owner", "repo", onPage(0)).Return([]*github.Hook{hook("https://other.local")}, page(2), nil).Once()
+		mockRepos.On("ListHooks", mock.Anything, "owner", "repo", onPage(2)).Return([]*github.Hook{hook("https://hooks.local")}, page(0), nil).Once()
+
+		c := &Client{googleClient: &GClient{Repositories: mockRepos}}
+		got, err := c.GetHookByUrl(context.Background(), "https://github.com/owner/repo.git", "https://hooks.local")
+
+		require.NoError(t, err)
+		assert.Equal(t, "https://hooks.local", got.Url)
+	})
+
+	t.Run("not found on any page", func(t *testing.T) {
+		mockRepos := githubMocks.NewMockRepositoriesServices(t)
+		mockRepos.On("ListHooks", mock.Anything, "owner", "repo", onPage(0)).Return([]*github.Hook{hook("https://other.local")}, page(2), nil).Once()
+		mockRepos.On("ListHooks", mock.Anything, "owner", "repo", onPage(2)).Return([]*github.Hook{}, page(0), nil).Once()
+
+		c := &Client{googleClient: &GClient{Repositories: mockRepos}}
+		_, err := c.GetHookByUrl(context.Background(), "https://github.com/owner/repo.git", "https://hooks.local")
+
+		assert.ErrorIs(t, err, vcs.ErrHookNotFound)
+	})
 }

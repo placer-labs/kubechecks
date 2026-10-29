@@ -36,9 +36,19 @@ func (c *Client) ParseHook(ctx context.Context, r *http.Request, request []byte)
 
 	switch p := payload.(type) {
 	case *github.PullRequestEvent:
+		if c.rejectFork(p.GetPullRequest()) {
+			return nilPr, vcs.ErrInvalidType
+		}
 		switch p.GetAction() {
-		case "opened", "synchronize", "reopened", "edited":
+		case "opened", "synchronize", "reopened":
 			log.Info().Str("action", p.GetAction()).Msg("handling Github event from PR")
+			return c.buildRepoFromEvent(p), nil
+		case "edited":
+			if p.GetChanges().GetBase() == nil {
+				log.Info().Str("action", p.GetAction()).Msg("ignoring Github pull request edit that did not change the base branch")
+				return nilPr, vcs.ErrInvalidType
+			}
+			log.Info().Str("action", p.GetAction()).Msg("handling Github base branch change from PR")
 			return c.buildRepoFromEvent(p), nil
 		default:
 			log.Info().Str("action", p.GetAction()).Msg("ignoring Github pull request event due to non commit based action")
@@ -47,7 +57,11 @@ func (c *Client) ParseHook(ctx context.Context, r *http.Request, request []byte)
 	case *github.IssueCommentEvent:
 		switch p.GetAction() {
 		case "created":
-			if strings.ToLower(p.Comment.GetBody()) == c.cfg.ReplanCommentMessage {
+			if !p.GetIssue().IsPullRequest() {
+				log.Info().Msg("ignoring Github issue comment event on an issue that is not a pull request")
+				return nilPr, vcs.ErrInvalidType
+			}
+			if strings.EqualFold(strings.TrimSpace(p.GetComment().GetBody()), strings.TrimSpace(c.cfg.ReplanCommentMessage)) {
 				log.Info().Msgf("Got %s comment, Running again", c.cfg.ReplanCommentMessage)
 				return c.buildRepoFromComment(ctx, p)
 			} else {
@@ -66,27 +80,34 @@ func (c *Client) ParseHook(ctx context.Context, r *http.Request, request []byte)
 
 func (c *Client) GetHookByUrl(ctx context.Context, ownerAndRepoName, webhookUrl string) (*vcs.WebHookConfig, error) {
 	owner, repoName := parseRepo(ownerAndRepoName)
-	items, _, err := c.googleClient.Repositories.ListHooks(ctx, owner, repoName, nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to list hooks")
-	}
+	opts := &github.ListOptions{PerPage: 100}
 
-	for _, item := range items {
-		itemConfig := item.GetConfig()
-		// check if the hook's config has a URL
-		hookPayloadURL := ""
-		if itemConfig != nil {
-			hookPayloadURL = itemConfig.GetURL()
+	for {
+		items, resp, err := c.googleClient.Repositories.ListHooks(ctx, owner, repoName, opts)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to list hooks")
 		}
-		if hookPayloadURL == webhookUrl {
-			return &vcs.WebHookConfig{
-				Url:    hookPayloadURL,
-				Events: item.Events, // TODO: translate GH specific event names to VCS agnostic
-			}, nil
-		}
-	}
 
-	return nil, vcs.ErrHookNotFound
+		for _, item := range items {
+			itemConfig := item.GetConfig()
+			// check if the hook's config has a URL
+			hookPayloadURL := ""
+			if itemConfig != nil {
+				hookPayloadURL = itemConfig.GetURL()
+			}
+			if hookPayloadURL == webhookUrl {
+				return &vcs.WebHookConfig{
+					Url:    hookPayloadURL,
+					Events: item.Events, // TODO: translate GH specific event names to VCS agnostic
+				}, nil
+			}
+		}
+
+		if resp == nil || resp.NextPage == 0 {
+			return nil, vcs.ErrHookNotFound
+		}
+		opts.Page = resp.NextPage
+	}
 }
 
 func (c *Client) CreateHook(ctx context.Context, ownerAndRepoName, webhookUrl, webhookSecret string) error {
@@ -152,7 +173,7 @@ func (c *Client) LoadHook(ctx context.Context, id string) (vcs.PullRequest, erro
 
 	if pullRequest.Base != nil {
 		baseRef = unPtr(pullRequest.Base.Ref)
-		headRef = unPtr(pullRequest.Head.Ref)
+		headRef = headRevision(pullRequest)
 	}
 
 	if repoInfo.Owner != nil {

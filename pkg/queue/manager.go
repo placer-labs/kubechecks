@@ -44,6 +44,15 @@ type RepoQueue struct {
 	processed    int
 	checkTimeout time.Duration
 	processFunc  ProcessFunc
+	rootCtx      context.Context
+
+	latestSHA map[int]string
+	running   map[int]runningCheck
+}
+
+type runningCheck struct {
+	sha    string
+	cancel context.CancelCauseFunc
 }
 
 // QueueManager manages all repository queues
@@ -53,12 +62,17 @@ type QueueManager struct {
 	queueSize    int
 	checkTimeout time.Duration
 	processFunc  ProcessFunc
+	rootCtx      context.Context
+	cancelAll    context.CancelFunc
+	cancelGrace  time.Duration
 }
 
 // Config holds queue manager configuration
 type Config struct {
 	QueueSize    int
 	CheckTimeout time.Duration
+	// CancelGrace is how long Shutdown waits for in-flight checks to wind down after cancelling them.
+	CancelGrace time.Duration
 }
 
 // NewQueueManager creates a new queue manager
@@ -66,8 +80,15 @@ func NewQueueManager(cfg Config, processFunc ProcessFunc) *QueueManager {
 	if cfg.QueueSize <= 0 {
 		cfg.QueueSize = 100 // Default buffer size
 	}
+	if cfg.CancelGrace <= 0 {
+		cfg.CancelGrace = 3 * time.Second
+	}
 
+	rootCtx, cancelAll := context.WithCancel(context.Background())
 	return &QueueManager{
+		rootCtx:      rootCtx,
+		cancelAll:    cancelAll,
+		cancelGrace:  cfg.CancelGrace,
 		queues:       make(map[string]*RepoQueue),
 		queueSize:    cfg.QueueSize,
 		checkTimeout: cfg.CheckTimeout,
@@ -112,6 +133,9 @@ func (qm *QueueManager) Enqueue(ctx context.Context, params EnqueueParams) error
 				queuedAt:     time.Now(),
 				checkTimeout: qm.checkTimeout,
 				processFunc:  qm.processFunc,
+				rootCtx:      qm.rootCtx,
+				latestSHA:    make(map[int]string),
+				running:      make(map[int]runningCheck),
 			}
 			qm.queues[repoKey] = queue
 
@@ -135,6 +159,8 @@ func (qm *QueueManager) Enqueue(ctx context.Context, params EnqueueParams) error
 		AIReviewChecker: params.AIReviewChecker,
 		Timestamp:       time.Now(),
 	}
+
+	queue.supersede(params.PullRequest)
 
 	// Try to enqueue (non-blocking)
 	select {
@@ -265,7 +291,16 @@ func (rq *RepoQueue) processRequest(request *CheckRequest) {
 		Dur("queued_for", time.Since(request.Timestamp)).
 		Msg("worker processing request")
 
-	ctx := context.Background()
+	ctx, ok := rq.begin(request.PullRequest)
+	if !ok {
+		log.Info().
+			Str("repo", request.PullRequest.CloneURL).
+			Int("check_id", request.PullRequest.CheckID).
+			Str("sha", request.PullRequest.SHA).
+			Msg("skipping check for a commit the PR has moved past")
+		return
+	}
+	defer rq.end(request.PullRequest)
 	if rq.checkTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, rq.checkTimeout)
@@ -303,6 +338,40 @@ func (rq *RepoQueue) processRequest(request *CheckRequest) {
 		Msg("worker completed request")
 }
 
+// supersede records pr.SHA as the commit to check for this PR and cancels a
+// running check for an older commit.
+func (rq *RepoQueue) supersede(pr vcs.PullRequest) {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	rq.latestSHA[pr.CheckID] = pr.SHA
+	if r, ok := rq.running[pr.CheckID]; ok && r.sha != pr.SHA {
+		r.cancel(pkg.ErrCheckSuperseded)
+	}
+}
+
+func (rq *RepoQueue) begin(pr vcs.PullRequest) (context.Context, bool) {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	if latest, ok := rq.latestSHA[pr.CheckID]; ok && latest != pr.SHA {
+		return nil, false
+	}
+	ctx, cancel := context.WithCancelCause(rq.rootCtx)
+	rq.running[pr.CheckID] = runningCheck{sha: pr.SHA, cancel: cancel}
+	return ctx, true
+}
+
+func (rq *RepoQueue) end(pr vcs.PullRequest) {
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	if r, ok := rq.running[pr.CheckID]; ok && r.sha == pr.SHA {
+		r.cancel(nil)
+		delete(rq.running, pr.CheckID)
+	}
+	if rq.latestSHA[pr.CheckID] == pr.SHA {
+		delete(rq.latestSHA, pr.CheckID)
+	}
+}
+
 // Shutdown gracefully shuts down all queues and workers
 func (qm *QueueManager) Shutdown(ctx context.Context) error {
 	log.Info().Msg("shutting down queue manager")
@@ -333,7 +402,12 @@ func (qm *QueueManager) Shutdown(ctx context.Context) error {
 		log.Info().Msg("all queue workers shutdown successfully")
 		return nil
 	case <-ctx.Done():
-		log.Warn().Msg("queue shutdown timed out")
+		log.Warn().Msg("queue shutdown timed out, cancelling in-flight checks")
+		qm.cancelAll()
+		select {
+		case <-done:
+		case <-time.After(qm.cancelGrace):
+		}
 		return ctx.Err()
 	}
 }

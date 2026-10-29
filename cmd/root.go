@@ -87,6 +87,7 @@ func init() {
 	stringFlag(flags, "otel-collector-host", "The OpenTelemetry collector host.")
 	boolFlag(flags, "otel-enabled", "Enable OpenTelemetry.")
 
+	boolFlag(flags, "allow-fork-pull-requests", "Check pull requests opened from forks. Their content is rendered by the ArgoCD repo-server, so enable only when every fork is trusted.")
 	stringFlag(flags, "tidy-outdated-comments-mode", "Sets the mode to use when tidying outdated comments.",
 		newStringOpts().
 			withChoices("hide", "delete").

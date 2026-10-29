@@ -8,6 +8,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/mock"
 	vcsmocks "github.com/zapier/kubechecks/mocks/vcs/mocks"
 	"github.com/zapier/kubechecks/pkg/config"
@@ -202,4 +203,18 @@ func TestPostArchiveErrorMessage(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "vcs unavailable")
 	})
+}
+
+func TestCloneReusesValidatedArchiveURL(t *testing.T) {
+	pr := vcs.PullRequest{FullName: "org/repo", CheckID: 42, SHA: "abc"}
+	mockClient := vcsmocks.NewMockClient(t)
+	mockClient.On("DownloadArchive", mock.Anything, pr).Return("not-an-archive-url", nil).Once()
+	m := newTestManager(mockClient)
+
+	require.NoError(t, m.ValidatePullRequest(context.Background(), pr))
+	_, err := m.Clone(context.Background(), "https://github.com/org/repo.git", "main", pr)
+	require.Error(t, err)
+
+	_, stillCached := m.validatedURLs.Load(validatedKey(pr))
+	assert.False(t, stillCached)
 }

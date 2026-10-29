@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -39,6 +40,12 @@ type Manager struct {
 	cache     *Cache
 	vcsClient vcs.Client
 	cfg       config.ServerConfig
+
+	validatedURLs sync.Map
+}
+
+func validatedKey(pr vcs.PullRequest) string {
+	return fmt.Sprintf("%s#%d@%s", pr.FullName, pr.CheckID, pr.SHA)
 }
 
 // NewManager creates a new archive manager
@@ -65,10 +72,15 @@ func (m *Manager) Clone(ctx context.Context, cloneURL, branchName string, pr vcs
 		Int("pr_number", pr.CheckID).
 		Msg("using archive mode instead of git clone")
 
-	// Get archive URL from VCS
-	archiveURL, err := m.vcsClient.DownloadArchive(ctx, pr)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get archive URL from VCS")
+	var archiveURL string
+	if v, ok := m.validatedURLs.LoadAndDelete(validatedKey(pr)); ok {
+		archiveURL = v.(string)
+	} else {
+		var err error
+		archiveURL, err = m.vcsClient.DownloadArchive(ctx, pr)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get archive URL from VCS")
+		}
 	}
 
 	// Extract merge commit SHA from archive URL for cache key.
@@ -165,10 +177,11 @@ func (m *Manager) Release(cloneURL, mergeCommitSHA string) {
 // Returns error if PR has conflicts or is not mergeable
 func (m *Manager) ValidatePullRequest(ctx context.Context, pr vcs.PullRequest) error {
 	// Try to get archive URL - this will fail if PR has conflicts
-	_, err := m.vcsClient.DownloadArchive(ctx, pr)
+	archiveURL, err := m.vcsClient.DownloadArchive(ctx, pr)
 	if err != nil {
 		return errors.Wrap(err, "PR cannot use archive mode (may have conflicts)")
 	}
+	m.validatedURLs.Store(validatedKey(pr), archiveURL)
 	return nil
 }
 

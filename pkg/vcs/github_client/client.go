@@ -12,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"github.com/shurcooL/githubv4"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/oauth2"
 
@@ -65,7 +66,7 @@ func CreateGithubClient(ctx context.Context, cfg config.ServerConfig) (*Client, 
 		shurcoolClient *githubv4.Client
 	)
 
-	githubClient, appTransport, err := createHttpClient(ctx, cfg)
+	githubClient, appTransport, err := createHttpClient(cfg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create github http client")
 	}
@@ -100,7 +101,16 @@ func CreateGithubClient(ctx context.Context, cfg config.ServerConfig) (*Client, 
 		client.appTokenSource = appTransport
 	}
 
-	if client.username == "" || client.email == "" {
+	if cfg.IsGithubApp() {
+		if client.username == "" {
+			login, err := appBotLogin(ctx, cfg)
+			if err != nil {
+				log.Warn().Err(err).Msg("failed to resolve GitHub App bot login")
+			} else {
+				client.username = login
+			}
+		}
+	} else if client.username == "" || client.email == "" {
 		user, _, err := googleClient.Users.Get(ctx, "")
 		if err == nil {
 			if user.Login != nil {
@@ -123,15 +133,42 @@ func CreateGithubClient(ctx context.Context, cfg config.ServerConfig) (*Client, 
 	return client, nil
 }
 
+// appBotLogin returns the login GitHub attributes the App's activity to. Installation
+// tokens cannot read /user, so the slug is fetched with an app JWT instead.
+func appBotLogin(ctx context.Context, cfg config.ServerConfig) (string, error) {
+	appsTransport, err := ghinstallation.NewAppsTransport(otelhttp.NewTransport(http.DefaultTransport), cfg.GithubAppID, []byte(cfg.GithubPrivateKey))
+	if err != nil {
+		return "", errors.Wrap(err, "failed to create github app jwt transport")
+	}
+
+	appsClient := github.NewClient(&http.Client{Transport: appsTransport})
+	if cfg.VcsBaseUrl != "" && cfg.VcsUploadUrl != "" {
+		appsClient, err = appsClient.WithEnterpriseURLs(cfg.VcsBaseUrl, cfg.VcsUploadUrl)
+		if err != nil {
+			return "", errors.Wrap(err, "failed to create github enterprise apps client")
+		}
+	}
+
+	app, _, err := appsClient.Apps.Get(ctx, "")
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get github app")
+	}
+	if app.GetSlug() == "" {
+		return "", errors.New("github app has no slug")
+	}
+
+	return app.GetSlug() + "[bot]", nil
+}
+
 // createHttpClient returns the authenticated http.Client used by the go-github SDK.
 // For GitHub App auth it also returns the underlying ghinstallation.Transport so callers
 // can fetch installation tokens directly (used by GetAuthHeaders for archive downloads).
 // For PAT auth the second return value is nil.
-func createHttpClient(ctx context.Context, cfg config.ServerConfig) (*http.Client, *ghinstallation.Transport, error) {
+func createHttpClient(cfg config.ServerConfig) (*http.Client, *ghinstallation.Transport, error) {
 	// Initialize the GitHub client with app key if provided
 	if cfg.IsGithubApp() {
 		appTransport, err := ghinstallation.New(
-			http.DefaultTransport, cfg.GithubAppID, cfg.GithubInstallationID, []byte(cfg.GithubPrivateKey),
+			otelhttp.NewTransport(http.DefaultTransport), cfg.GithubAppID, cfg.GithubInstallationID, []byte(cfg.GithubPrivateKey),
 		)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "failed to create github app transport")
@@ -147,7 +184,10 @@ func createHttpClient(ctx context.Context, cfg config.ServerConfig) (*http.Clien
 		ts := oauth2.StaticTokenSource(
 			&oauth2.Token{AccessToken: vcsToken},
 		)
-		return oauth2.NewClient(ctx, ts), nil, nil
+		return &http.Client{Transport: &oauth2.Transport{
+			Source: oauth2.ReuseTokenSource(nil, ts),
+			Base:   otelhttp.NewTransport(http.DefaultTransport),
+		}}, nil, nil
 	}
 
 	return nil, nil, errors.New("Either GitHub token or GitHub App credentials (App ID, Installation ID, Private Key) must be set")
@@ -215,7 +255,7 @@ func (c *Client) GitCredentials(ctx context.Context) (string, string, error) {
 var nilPr vcs.PullRequest
 
 func (c *Client) buildRepo(pullRequest *github.PullRequest) vcs.PullRequest {
-	repo := pullRequest.Head.Repo
+	repo := pullRequest.GetBase().GetRepo()
 
 	var labels []string
 	for _, label := range pullRequest.Labels {
@@ -223,15 +263,15 @@ func (c *Client) buildRepo(pullRequest *github.PullRequest) vcs.PullRequest {
 	}
 
 	return vcs.PullRequest{
-		BaseRef:       pullRequest.Base.GetRef(),
-		HeadRef:       pullRequest.Head.GetRef(),
+		BaseRef:       pullRequest.GetBase().GetRef(),
+		HeadRef:       headRevision(pullRequest),
 		DefaultBranch: repo.GetDefaultBranch(),
 		CloneURL:      repo.GetCloneURL(),
 		FullName:      repo.GetFullName(),
-		Owner:         repo.Owner.GetLogin(),
+		Owner:         repo.GetOwner().GetLogin(),
 		Name:          repo.GetName(),
 		CheckID:       pullRequest.GetNumber(),
-		SHA:           pullRequest.Head.GetSHA(),
+		SHA:           pullRequest.GetHead().GetSHA(),
 		Username:      c.username,
 		Email:         c.email,
 		Labels:        labels,
@@ -240,6 +280,27 @@ func (c *Client) buildRepo(pullRequest *github.PullRequest) vcs.PullRequest {
 
 		Config: c.cfg,
 	}
+}
+
+// headRevision names the PR head in the base repository. A fork's branch name
+// means nothing there, so fork PRs are identified by their head SHA instead.
+func headRevision(pr *github.PullRequest) string {
+	if isFork(pr) {
+		return pr.GetHead().GetSHA()
+	}
+	return pr.GetHead().GetRef()
+}
+
+func isFork(pr *github.PullRequest) bool {
+	return !strings.EqualFold(pr.GetHead().GetRepo().GetFullName(), pr.GetBase().GetRepo().GetFullName())
+}
+
+func (c *Client) rejectFork(pr *github.PullRequest) bool {
+	if c.cfg.AllowForkPullRequests || !isFork(pr) {
+		return false
+	}
+	log.Info().Int("pr", pr.GetNumber()).Msg("ignoring pull request from a fork; set allow-fork-pull-requests to check it")
+	return true
 }
 
 func (c *Client) buildRepoFromEvent(event *github.PullRequestEvent) vcs.PullRequest {
@@ -256,6 +317,9 @@ func (c *Client) buildRepoFromComment(context context.Context, comment *github.I
 	pr, _, err := c.googleClient.PullRequests.Get(context, owner, repoName, prNumber)
 	if err != nil {
 		return nilPr, errors.Wrap(err, "failed to get pull request")
+	}
+	if c.rejectFork(pr) {
+		return nilPr, vcs.ErrInvalidType
 	}
 
 	return c.buildRepo(pr), nil
@@ -288,6 +352,8 @@ func unPtr[T interface{ string | int }](ps *T) T {
 	return *ps
 }
 
+const maxListedPullRequestFiles = 3000
+
 // GetPullRequestFiles returns the list of files changed in a pull request
 func (c *Client) GetPullRequestFiles(ctx context.Context, pr vcs.PullRequest) ([]string, error) {
 	ctx, span := tracer.Start(ctx, "GetPullRequestFiles")
@@ -310,8 +376,8 @@ func (c *Client) GetPullRequestFiles(ctx context.Context, pr vcs.PullRequest) ([
 		}
 
 		for _, file := range files {
-			if file.Filename != nil {
-				allFiles = append(allFiles, *file.Filename)
+			if file.GetFilename() != "" {
+				allFiles = append(allFiles, file.GetFilename())
 			}
 		}
 
@@ -319,6 +385,16 @@ func (c *Client) GetPullRequestFiles(ctx context.Context, pr vcs.PullRequest) ([
 			break
 		}
 		opts.Page = resp.NextPage
+	}
+
+	if len(allFiles) >= maxListedPullRequestFiles {
+		ghPR, _, err := c.googleClient.PullRequests.Get(ctx, pr.Owner, pr.Name, pr.CheckID)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get PR changed file count")
+		}
+		if ghPR.GetChangedFiles() > len(allFiles) {
+			return nil, fmt.Errorf("PR changes %d files but GitHub only lists the first %d", ghPR.GetChangedFiles(), len(allFiles))
+		}
 	}
 
 	log.Debug().

@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -70,3 +71,6 @@ func ParseCommitState(s string) (CommitState, error) {
 
 	}
 }
+
+// ErrCheckSuperseded is the cancellation cause for a check replaced by a newer commit on the same PR.
+var ErrCheckSuperseded = errors.New("check superseded by a newer commit")

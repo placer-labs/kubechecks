@@ -126,6 +126,7 @@ type ServerConfig struct {
 	SchemasLocations         []string `mapstructure:"schemas-location"`
 	ShowDebugInfo            bool     `mapstructure:"show-debug-info"`
 	TidyOutdatedCommentsMode string   `mapstructure:"tidy-outdated-comments-mode"`
+	AllowForkPullRequests    bool     `mapstructure:"allow-fork-pull-requests"`
 	MaxQueueSize             int64    `mapstructure:"max-queue-size"`
 	MaxConcurrentChecks      int      `mapstructure:"max-concurrent-checks"`
 	MaxRepoWorkerQueueSize   int      `mapstructure:"max-repo-worker-queue-size"`
