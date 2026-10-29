@@ -324,6 +324,8 @@ func unPtr[T interface{ string | int }](ps *T) T {
 	return *ps
 }
 
+const maxListedPullRequestFiles = 3000
+
 // GetPullRequestFiles returns the list of files changed in a pull request
 func (c *Client) GetPullRequestFiles(ctx context.Context, pr vcs.PullRequest) ([]string, error) {
 	ctx, span := tracer.Start(ctx, "GetPullRequestFiles")
@@ -346,8 +348,8 @@ func (c *Client) GetPullRequestFiles(ctx context.Context, pr vcs.PullRequest) ([
 		}
 
 		for _, file := range files {
-			if file.Filename != nil {
-				allFiles = append(allFiles, *file.Filename)
+			if file.GetFilename() != "" {
+				allFiles = append(allFiles, file.GetFilename())
 			}
 		}
 
@@ -355,6 +357,16 @@ func (c *Client) GetPullRequestFiles(ctx context.Context, pr vcs.PullRequest) ([
 			break
 		}
 		opts.Page = resp.NextPage
+	}
+
+	if len(allFiles) >= maxListedPullRequestFiles {
+		ghPR, _, err := c.googleClient.PullRequests.Get(ctx, pr.Owner, pr.Name, pr.CheckID)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get PR changed file count")
+		}
+		if ghPR.GetChangedFiles() > len(allFiles) {
+			return nil, fmt.Errorf("PR changes %d files but GitHub only lists the first %d", ghPR.GetChangedFiles(), len(allFiles))
+		}
 	}
 
 	log.Debug().

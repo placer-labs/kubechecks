@@ -1216,3 +1216,44 @@ func NewMockPullRequestsServicesWithGet(t *testing.T, responses ...prResponse) *
 
 	return mockPR
 }
+
+func listedFiles(n int) []*github.CommitFile {
+	files := make([]*github.CommitFile, n)
+	for i := range files {
+		files[i] = &github.CommitFile{Filename: github.Ptr(fmt.Sprintf("file%d.yaml", i))}
+	}
+	return files
+}
+
+func TestClient_GetPullRequestFiles_Truncated(t *testing.T) {
+	for name, tc := range map[string]struct {
+		listed, changed int
+		wantErr         string
+	}{
+		"truncated at the cap":  {listed: maxListedPullRequestFiles, changed: 3500, wantErr: "PR changes 3500 files but GitHub only lists the first 3000"},
+		"exactly at the cap":    {listed: maxListedPullRequestFiles, changed: maxListedPullRequestFiles},
+		"under the cap no call": {listed: 2999, changed: -1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			mockPR := githubMocks.NewMockPullRequestsServices(t)
+			mockPR.On("ListFiles", mock.Anything, "owner", "repo", 123,
+				mock.MatchedBy(func(opts *github.ListOptions) bool { return opts.PerPage == 100 }),
+			).Return(listedFiles(tc.listed), &github.Response{Response: &http.Response{StatusCode: 200}}, nil).Once()
+			if tc.changed >= 0 {
+				mockPR.On("Get", mock.Anything, "owner", "repo", 123).
+					Return(&github.PullRequest{ChangedFiles: github.Ptr(tc.changed)}, nil, nil).Once()
+			}
+
+			c := &Client{googleClient: &GClient{PullRequests: mockPR}}
+			files, err := c.GetPullRequestFiles(context.Background(), vcs.PullRequest{Owner: "owner", Name: "repo", CheckID: 123})
+
+			if tc.wantErr != "" {
+				require.EqualError(t, err, tc.wantErr)
+				assert.Nil(t, files)
+				return
+			}
+			require.NoError(t, err)
+			assert.Len(t, files, tc.listed)
+		})
+	}
+}
