@@ -37,8 +37,15 @@ func (c *Client) ParseHook(ctx context.Context, r *http.Request, request []byte)
 	switch p := payload.(type) {
 	case *github.PullRequestEvent:
 		switch p.GetAction() {
-		case "opened", "synchronize", "reopened", "edited":
+		case "opened", "synchronize", "reopened":
 			log.Info().Str("action", p.GetAction()).Msg("handling Github event from PR")
+			return c.buildRepoFromEvent(p), nil
+		case "edited":
+			if p.GetChanges().GetBase() == nil {
+				log.Info().Str("action", p.GetAction()).Msg("ignoring Github pull request edit that did not change the base branch")
+				return nilPr, vcs.ErrInvalidType
+			}
+			log.Info().Str("action", p.GetAction()).Msg("handling Github base branch change from PR")
 			return c.buildRepoFromEvent(p), nil
 		default:
 			log.Info().Str("action", p.GetAction()).Msg("ignoring Github pull request event due to non commit based action")
@@ -47,7 +54,11 @@ func (c *Client) ParseHook(ctx context.Context, r *http.Request, request []byte)
 	case *github.IssueCommentEvent:
 		switch p.GetAction() {
 		case "created":
-			if strings.ToLower(p.Comment.GetBody()) == c.cfg.ReplanCommentMessage {
+			if !p.GetIssue().IsPullRequest() {
+				log.Info().Msg("ignoring Github issue comment event on an issue that is not a pull request")
+				return nilPr, vcs.ErrInvalidType
+			}
+			if strings.EqualFold(strings.TrimSpace(p.GetComment().GetBody()), strings.TrimSpace(c.cfg.ReplanCommentMessage)) {
 				log.Info().Msgf("Got %s comment, Running again", c.cfg.ReplanCommentMessage)
 				return c.buildRepoFromComment(ctx, p)
 			} else {
