@@ -136,6 +136,10 @@ func (c *Client) ParseHook(_ context.Context, r *http.Request, request []byte) (
 
 	switch event := eventRequest.(type) {
 	case *gitlab.MergeEvent:
+		attrs := event.ObjectAttributes
+		if c.rejectFork(attrs.IID, attrs.SourceProjectID, attrs.TargetProjectID) {
+			return nilPr, vcs.ErrInvalidType
+		}
 		switch event.ObjectAttributes.Action {
 		case "update":
 			if event.ObjectAttributes.OldRev != "" && event.ObjectAttributes.OldRev != event.ObjectAttributes.LastCommit.ID {
@@ -149,6 +153,10 @@ func (c *Client) ParseHook(_ context.Context, r *http.Request, request []byte) (
 			return nilPr, vcs.ErrInvalidType
 		}
 	case *gitlab.MergeCommentEvent:
+		mr := event.MergeRequest
+		if c.rejectFork(mr.IID, mr.SourceProjectID, mr.TargetProjectID) {
+			return nilPr, vcs.ErrInvalidType
+		}
 		switch event.ObjectAttributes.Action {
 		case gitlab.CommentEventActionCreate:
 			if strings.ToLower(event.ObjectAttributes.Note) == c.cfg.ReplanCommentMessage {
@@ -258,7 +266,7 @@ func (c *Client) LoadHook(ctx context.Context, id string) (vcs.PullRequest, erro
 
 	return vcs.PullRequest{
 		BaseRef:       mergeRequest.TargetBranch,
-		HeadRef:       mergeRequest.SourceBranch,
+		HeadRef:       headRevision(mergeRequest.SourceProjectID, mergeRequest.TargetProjectID, mergeRequest.SourceBranch, mergeRequest.SHA),
 		DefaultBranch: project.DefaultBranch,
 		Remote:        "",
 		CloneURL:      project.HTTPURLToRepo,
@@ -277,6 +285,27 @@ func (c *Client) LoadHook(ctx context.Context, id string) (vcs.PullRequest, erro
 	}, nil
 }
 
+// headRevision names the MR head in the target project. A fork's branch name
+// means nothing there, so fork MRs are identified by their head SHA instead.
+func headRevision(sourceProjectID, targetProjectID int64, sourceBranch, sha string) string {
+	if isFork(sourceProjectID, targetProjectID) {
+		return sha
+	}
+	return sourceBranch
+}
+
+func isFork(sourceProjectID, targetProjectID int64) bool {
+	return sourceProjectID != targetProjectID
+}
+
+func (c *Client) rejectFork(iid, sourceProjectID, targetProjectID int64) bool {
+	if c.cfg.AllowForkPullRequests || !isFork(sourceProjectID, targetProjectID) {
+		return false
+	}
+	log.Info().Int64("mr", iid).Msg("ignoring merge request from a fork; set allow-fork-pull-requests to check it")
+	return true
+}
+
 func (c *Client) buildRepoFromEvent(event *gitlab.MergeEvent) vcs.PullRequest {
 	// Convert all labels from this MR to a string array of label names
 	var labels []string
@@ -286,7 +315,7 @@ func (c *Client) buildRepoFromEvent(event *gitlab.MergeEvent) vcs.PullRequest {
 
 	return vcs.PullRequest{
 		BaseRef:       event.ObjectAttributes.TargetBranch,
-		HeadRef:       event.ObjectAttributes.SourceBranch,
+		HeadRef:       headRevision(event.ObjectAttributes.SourceProjectID, event.ObjectAttributes.TargetProjectID, event.ObjectAttributes.SourceBranch, event.ObjectAttributes.LastCommit.ID),
 		DefaultBranch: event.Project.DefaultBranch,
 		FullName:      event.Project.PathWithNamespace,
 		CloneURL:      event.Project.GitHTTPURL,
@@ -311,7 +340,7 @@ func (c *Client) buildRepoFromComment(event *gitlab.MergeCommentEvent) vcs.PullR
 	}
 	return vcs.PullRequest{
 		BaseRef:       event.MergeRequest.TargetBranch,
-		HeadRef:       event.MergeRequest.SourceBranch,
+		HeadRef:       headRevision(event.MergeRequest.SourceProjectID, event.MergeRequest.TargetProjectID, event.MergeRequest.SourceBranch, event.MergeRequest.LastCommit.ID),
 		DefaultBranch: event.Project.DefaultBranch,
 		FullName:      event.Project.PathWithNamespace,
 		CloneURL:      event.Project.GitHTTPURL,
