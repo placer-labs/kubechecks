@@ -8,7 +8,7 @@ import (
 
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	giturls "github.com/chainguard-dev/git-urls"
-	"github.com/google/go-github/v74/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"github.com/shurcooL/githubv4"
@@ -75,13 +75,16 @@ func CreateGithubClient(ctx context.Context, cfg config.ServerConfig) (*Client, 
 	githubUploadUrl := cfg.VcsUploadUrl
 	// we need both urls to be set for github enterprise
 	if githubUrl == "" || githubUploadUrl == "" {
-		googleClient = github.NewClient(githubClient) // If this has failed, we'll catch it on first call
+		googleClient, err = github.NewClient(github.WithHTTPClient(githubClient))
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create github client")
+		}
 
 		shurcoolClient = githubv4.NewClient(githubClient)
 	} else {
-		googleClient, err = github.NewClient(githubClient).WithEnterpriseURLs(githubUrl, githubUploadUrl)
+		googleClient, err = github.NewClient(github.WithHTTPClient(githubClient), github.WithEnterpriseURLs(githubUrl, githubUploadUrl))
 		if err != nil {
-			log.Fatal().Err(err).Msg("failed to create github enterprise client")
+			return nil, errors.Wrap(err, "failed to create github enterprise client")
 		}
 		shurcoolClient = githubv4.NewEnterpriseClient(githubUrl, githubClient)
 	}
@@ -141,12 +144,13 @@ func appBotLogin(ctx context.Context, cfg config.ServerConfig) (string, error) {
 		return "", errors.Wrap(err, "failed to create github app jwt transport")
 	}
 
-	appsClient := github.NewClient(&http.Client{Transport: appsTransport})
+	opts := []github.ClientOptionsFunc{github.WithTransport(appsTransport)}
 	if cfg.VcsBaseUrl != "" && cfg.VcsUploadUrl != "" {
-		appsClient, err = appsClient.WithEnterpriseURLs(cfg.VcsBaseUrl, cfg.VcsUploadUrl)
-		if err != nil {
-			return "", errors.Wrap(err, "failed to create github enterprise apps client")
-		}
+		opts = append(opts, github.WithEnterpriseURLs(cfg.VcsBaseUrl, cfg.VcsUploadUrl))
+	}
+	appsClient, err := github.NewClient(opts...)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to create github apps client")
 	}
 
 	app, _, err := appsClient.Apps.Get(ctx, "")
@@ -366,25 +370,15 @@ func (c *Client) GetPullRequestFiles(ctx context.Context, pr vcs.PullRequest) ([
 		Msg("fetching PR files from GitHub API")
 
 	// List files changed in the PR
-	opts := &github.ListOptions{PerPage: 100}
 	var allFiles []string
 
-	for {
-		files, resp, err := c.googleClient.PullRequests.ListFiles(ctx, pr.Owner, pr.Name, pr.CheckID, opts)
+	for file, err := range c.googleClient.PullRequests.ListFilesIter(ctx, pr.Owner, pr.Name, pr.CheckID, &github.ListOptions{PerPage: 100}) {
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to list PR files")
 		}
-
-		for _, file := range files {
-			if file.GetFilename() != "" {
-				allFiles = append(allFiles, file.GetFilename())
-			}
+		if file.GetFilename() != "" {
+			allFiles = append(allFiles, file.GetFilename())
 		}
-
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
 	}
 
 	if len(allFiles) >= maxListedPullRequestFiles {

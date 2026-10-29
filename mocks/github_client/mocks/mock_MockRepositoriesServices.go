@@ -6,8 +6,9 @@ package github_client
 
 import (
 	"context"
+	"iter"
 
-	"github.com/google/go-github/v74/github"
+	"github.com/google/go-github/v93/github"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -127,7 +128,7 @@ func (_c *MockRepositoriesServices_CreateHook_Call) RunAndReturn(run func(ctx co
 }
 
 // CreateStatus provides a mock function for the type MockRepositoriesServices
-func (_mock *MockRepositoriesServices) CreateStatus(ctx context.Context, owner string, repo string, ref string, status *github.RepoStatus) (*github.RepoStatus, *github.Response, error) {
+func (_mock *MockRepositoriesServices) CreateStatus(ctx context.Context, owner string, repo string, ref string, status github.RepoStatus) (*github.RepoStatus, *github.Response, error) {
 	ret := _mock.Called(ctx, owner, repo, ref, status)
 
 	if len(ret) == 0 {
@@ -137,24 +138,24 @@ func (_mock *MockRepositoriesServices) CreateStatus(ctx context.Context, owner s
 	var r0 *github.RepoStatus
 	var r1 *github.Response
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, *github.RepoStatus) (*github.RepoStatus, *github.Response, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, github.RepoStatus) (*github.RepoStatus, *github.Response, error)); ok {
 		return returnFunc(ctx, owner, repo, ref, status)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, *github.RepoStatus) *github.RepoStatus); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, github.RepoStatus) *github.RepoStatus); ok {
 		r0 = returnFunc(ctx, owner, repo, ref, status)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*github.RepoStatus)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string, *github.RepoStatus) *github.Response); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string, github.RepoStatus) *github.Response); ok {
 		r1 = returnFunc(ctx, owner, repo, ref, status)
 	} else {
 		if ret.Get(1) != nil {
 			r1 = ret.Get(1).(*github.Response)
 		}
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, string, string, string, *github.RepoStatus) error); ok {
+	if returnFunc, ok := ret.Get(2).(func(context.Context, string, string, string, github.RepoStatus) error); ok {
 		r2 = returnFunc(ctx, owner, repo, ref, status)
 	} else {
 		r2 = ret.Error(2)
@@ -172,12 +173,12 @@ type MockRepositoriesServices_CreateStatus_Call struct {
 //   - owner string
 //   - repo string
 //   - ref string
-//   - status *github.RepoStatus
+//   - status github.RepoStatus
 func (_e *MockRepositoriesServices_Expecter) CreateStatus(ctx interface{}, owner interface{}, repo interface{}, ref interface{}, status interface{}) *MockRepositoriesServices_CreateStatus_Call {
 	return &MockRepositoriesServices_CreateStatus_Call{Call: _e.mock.On("CreateStatus", ctx, owner, repo, ref, status)}
 }
 
-func (_c *MockRepositoriesServices_CreateStatus_Call) Run(run func(ctx context.Context, owner string, repo string, ref string, status *github.RepoStatus)) *MockRepositoriesServices_CreateStatus_Call {
+func (_c *MockRepositoriesServices_CreateStatus_Call) Run(run func(ctx context.Context, owner string, repo string, ref string, status github.RepoStatus)) *MockRepositoriesServices_CreateStatus_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -195,9 +196,9 @@ func (_c *MockRepositoriesServices_CreateStatus_Call) Run(run func(ctx context.C
 		if args[3] != nil {
 			arg3 = args[3].(string)
 		}
-		var arg4 *github.RepoStatus
+		var arg4 github.RepoStatus
 		if args[4] != nil {
-			arg4 = args[4].(*github.RepoStatus)
+			arg4 = args[4].(github.RepoStatus)
 		}
 		run(
 			arg0,
@@ -215,7 +216,7 @@ func (_c *MockRepositoriesServices_CreateStatus_Call) Return(repoStatus *github.
 	return _c
 }
 
-func (_c *MockRepositoriesServices_CreateStatus_Call) RunAndReturn(run func(ctx context.Context, owner string, repo string, ref string, status *github.RepoStatus) (*github.RepoStatus, *github.Response, error)) *MockRepositoriesServices_CreateStatus_Call {
+func (_c *MockRepositoriesServices_CreateStatus_Call) RunAndReturn(run func(ctx context.Context, owner string, repo string, ref string, status github.RepoStatus) (*github.RepoStatus, *github.Response, error)) *MockRepositoriesServices_CreateStatus_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -404,57 +405,40 @@ func (_c *MockRepositoriesServices_GetContents_Call) RunAndReturn(run func(ctx c
 	return _c
 }
 
-// ListHooks provides a mock function for the type MockRepositoriesServices
-func (_mock *MockRepositoriesServices) ListHooks(ctx context.Context, owner string, repo string, opts *github.ListOptions) ([]*github.Hook, *github.Response, error) {
+// ListHooksIter provides a mock function for the type MockRepositoriesServices
+func (_mock *MockRepositoriesServices) ListHooksIter(ctx context.Context, owner string, repo string, opts *github.ListOptions) iter.Seq2[*github.Hook, error] {
 	ret := _mock.Called(ctx, owner, repo, opts)
 
 	if len(ret) == 0 {
-		panic("no return value specified for ListHooks")
+		panic("no return value specified for ListHooksIter")
 	}
 
-	var r0 []*github.Hook
-	var r1 *github.Response
-	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, *github.ListOptions) ([]*github.Hook, *github.Response, error)); ok {
-		return returnFunc(ctx, owner, repo, opts)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, *github.ListOptions) []*github.Hook); ok {
+	var r0 iter.Seq2[*github.Hook, error]
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, *github.ListOptions) iter.Seq2[*github.Hook, error]); ok {
 		r0 = returnFunc(ctx, owner, repo, opts)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]*github.Hook)
+			r0 = ret.Get(0).(iter.Seq2[*github.Hook, error])
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, *github.ListOptions) *github.Response); ok {
-		r1 = returnFunc(ctx, owner, repo, opts)
-	} else {
-		if ret.Get(1) != nil {
-			r1 = ret.Get(1).(*github.Response)
-		}
-	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, string, string, *github.ListOptions) error); ok {
-		r2 = returnFunc(ctx, owner, repo, opts)
-	} else {
-		r2 = ret.Error(2)
-	}
-	return r0, r1, r2
+	return r0
 }
 
-// MockRepositoriesServices_ListHooks_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListHooks'
-type MockRepositoriesServices_ListHooks_Call struct {
+// MockRepositoriesServices_ListHooksIter_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListHooksIter'
+type MockRepositoriesServices_ListHooksIter_Call struct {
 	*mock.Call
 }
 
-// ListHooks is a helper method to define mock.On call
+// ListHooksIter is a helper method to define mock.On call
 //   - ctx context.Context
 //   - owner string
 //   - repo string
 //   - opts *github.ListOptions
-func (_e *MockRepositoriesServices_Expecter) ListHooks(ctx interface{}, owner interface{}, repo interface{}, opts interface{}) *MockRepositoriesServices_ListHooks_Call {
-	return &MockRepositoriesServices_ListHooks_Call{Call: _e.mock.On("ListHooks", ctx, owner, repo, opts)}
+func (_e *MockRepositoriesServices_Expecter) ListHooksIter(ctx interface{}, owner interface{}, repo interface{}, opts interface{}) *MockRepositoriesServices_ListHooksIter_Call {
+	return &MockRepositoriesServices_ListHooksIter_Call{Call: _e.mock.On("ListHooksIter", ctx, owner, repo, opts)}
 }
 
-func (_c *MockRepositoriesServices_ListHooks_Call) Run(run func(ctx context.Context, owner string, repo string, opts *github.ListOptions)) *MockRepositoriesServices_ListHooks_Call {
+func (_c *MockRepositoriesServices_ListHooksIter_Call) Run(run func(ctx context.Context, owner string, repo string, opts *github.ListOptions)) *MockRepositoriesServices_ListHooksIter_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -482,12 +466,12 @@ func (_c *MockRepositoriesServices_ListHooks_Call) Run(run func(ctx context.Cont
 	return _c
 }
 
-func (_c *MockRepositoriesServices_ListHooks_Call) Return(hooks []*github.Hook, response *github.Response, err error) *MockRepositoriesServices_ListHooks_Call {
-	_c.Call.Return(hooks, response, err)
+func (_c *MockRepositoriesServices_ListHooksIter_Call) Return(seq2 iter.Seq2[*github.Hook, error]) *MockRepositoriesServices_ListHooksIter_Call {
+	_c.Call.Return(seq2)
 	return _c
 }
 
-func (_c *MockRepositoriesServices_ListHooks_Call) RunAndReturn(run func(ctx context.Context, owner string, repo string, opts *github.ListOptions) ([]*github.Hook, *github.Response, error)) *MockRepositoriesServices_ListHooks_Call {
+func (_c *MockRepositoriesServices_ListHooksIter_Call) RunAndReturn(run func(ctx context.Context, owner string, repo string, opts *github.ListOptions) iter.Seq2[*github.Hook, error]) *MockRepositoriesServices_ListHooksIter_Call {
 	_c.Call.Return(run)
 	return _c
 }

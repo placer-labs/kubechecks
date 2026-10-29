@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/go-github/v74/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"github.com/shurcooL/githubv4"
@@ -39,7 +39,7 @@ func (c *Client) PostMessage(ctx context.Context, pr vcs.PullRequest, message st
 		pr.Owner,
 		pr.Name,
 		pr.CheckID,
-		&github.IssueComment{Body: &message},
+		github.IssueCommentRequest{Body: message},
 	)
 
 	if err != nil {
@@ -71,10 +71,10 @@ func (c *Client) UpdateMessage(ctx context.Context, pr vcs.PullRequest, noteID i
 
 		err := rc.do(ctx, "posting comment", edit, func() (*github.Response, error) {
 			if edit {
-				_, resp, err := c.googleClient.Issues.EditComment(ctx, pr.Owner, pr.Name, int64(noteID), &github.IssueComment{Body: &chunk})
+				_, resp, err := c.googleClient.Issues.UpdateComment(ctx, pr.Owner, pr.Name, int64(noteID), github.IssueCommentRequest{Body: chunk})
 				return resp, err
 			}
-			_, resp, err := c.googleClient.Issues.CreateComment(ctx, pr.Owner, pr.Name, pr.CheckID, &github.IssueComment{Body: &chunk})
+			_, resp, err := c.googleClient.Issues.CreateComment(ctx, pr.Owner, pr.Name, pr.CheckID, github.IssueCommentRequest{Body: chunk})
 			return resp, err
 		})
 		if err != nil {
@@ -208,23 +208,18 @@ func (c *Client) TidyOutdatedComments(ctx context.Context, pr vcs.PullRequest) e
 	defer span.End()
 
 	var allComments []*github.IssueComment
-	nextPage := 0
+	opts := &github.IssueListCommentsOptions{
+		Sort:        pkg.Pointer("created"),
+		Direction:   pkg.Pointer("asc"),
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
 
-	for {
-		comments, resp, err := c.googleClient.Issues.ListComments(ctx, pr.Owner, pr.Name, pr.CheckID, &github.IssueListCommentsOptions{
-			Sort:        pkg.Pointer("created"),
-			Direction:   pkg.Pointer("asc"),
-			ListOptions: github.ListOptions{Page: nextPage, PerPage: 100},
-		})
+	for comment, err := range c.googleClient.Issues.ListCommentsIter(ctx, pr.Owner, pr.Name, pr.CheckID, opts) {
 		if err != nil {
 			telemetry.SetError(span, err, "Get Issue Comments failed")
 			return fmt.Errorf("failed listing comments: %w", err)
 		}
-		allComments = append(allComments, comments...)
-		if resp.NextPage == 0 {
-			break
-		}
-		nextPage = resp.NextPage
+		allComments = append(allComments, comment)
 	}
 
 	if strings.ToLower(c.cfg.TidyOutdatedCommentsMode) == "delete" {

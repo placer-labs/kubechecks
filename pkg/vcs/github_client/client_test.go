@@ -3,12 +3,13 @@ package github_client
 import (
 	"context"
 	"fmt"
+	"iter"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/google/go-github/v74/github"
+	"github.com/google/go-github/v93/github"
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -26,6 +27,21 @@ func MockGitHubMethod(methodName string, returns []interface{}) *GClient {
 
 	return &GClient{
 		Repositories: mockClient,
+	}
+}
+
+func seqOf[T any](items []T, err error) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
+		if err != nil {
+			var zero T
+			yield(zero, err)
+			return
+		}
+		for _, item := range items {
+			if !yield(item, nil) {
+				return
+			}
+		}
 	}
 }
 
@@ -205,9 +221,9 @@ func TestClient_GetHookByUrl(t *testing.T) {
 			name: "normal ok",
 			fields: fields{
 				shurcoolClient: nil,
-				googleClient: MockGitHubMethod("ListHooks",
+				googleClient: MockGitHubMethod("ListHooksIter",
 					[]interface{}{
-						[]*github.Hook{
+						seqOf[*github.Hook]([]*github.Hook{
 							{
 								Config: &github.HookConfig{
 									ContentType: github.Ptr("json"),
@@ -218,8 +234,7 @@ func TestClient_GetHookByUrl(t *testing.T) {
 								Events: []string{"pull_request"},
 							},
 						},
-						&github.Response{Response: &http.Response{StatusCode: http.StatusOK}},
-						nil}),
+							nil)}),
 				cfg: config.ServerConfig{
 					VcsToken: "ghp_helloworld",
 					VcsType:  "github",
@@ -242,9 +257,9 @@ func TestClient_GetHookByUrl(t *testing.T) {
 			name: "no matching webhook found",
 			fields: fields{
 				shurcoolClient: nil,
-				googleClient: MockGitHubMethod("ListHooks",
+				googleClient: MockGitHubMethod("ListHooksIter",
 					[]interface{}{
-						[]*github.Hook{
+						seqOf[*github.Hook]([]*github.Hook{
 							{
 								Config: &github.HookConfig{
 									ContentType: github.Ptr("json"),
@@ -255,8 +270,7 @@ func TestClient_GetHookByUrl(t *testing.T) {
 								Events: []string{"pull_request"},
 							},
 						},
-						&github.Response{Response: &http.Response{StatusCode: http.StatusOK}},
-						nil}),
+							nil)}),
 				cfg: config.ServerConfig{
 					VcsToken: "ghp_helloworld",
 					VcsType:  "github",
@@ -276,11 +290,10 @@ func TestClient_GetHookByUrl(t *testing.T) {
 			name: "0 webhook found",
 			fields: fields{
 				shurcoolClient: nil,
-				googleClient: MockGitHubMethod("ListHooks",
+				googleClient: MockGitHubMethod("ListHooksIter",
 					[]interface{}{
-						nil,
-						&github.Response{Response: &http.Response{StatusCode: http.StatusOK}},
-						nil}),
+						seqOf[*github.Hook](nil,
+							nil)}),
 				cfg: config.ServerConfig{
 					VcsToken: "ghp_helloworld",
 					VcsType:  "github",
@@ -300,11 +313,10 @@ func TestClient_GetHookByUrl(t *testing.T) {
 			name: "github error",
 			fields: fields{
 				shurcoolClient: nil,
-				googleClient: MockGitHubMethod("ListHooks",
+				googleClient: MockGitHubMethod("ListHooksIter",
 					[]interface{}{
-						nil,
-						&github.Response{Response: &http.Response{StatusCode: http.StatusBadRequest}},
-						fmt.Errorf("mock bad request")}),
+						seqOf[*github.Hook](nil,
+							fmt.Errorf("mock bad request"))}),
 				cfg: config.ServerConfig{
 					VcsToken: "ghp_helloworld",
 					VcsType:  "github",
@@ -368,10 +380,10 @@ func TestClient_buildRepoFromComment_HappyPath(t *testing.T) {
 							Number: github.Ptr(123),
 							Labels: []*github.Label{
 								{
-									Name: github.Ptr("test label1"),
+									Name: "test label1",
 								},
 								{
-									Name: github.Ptr("test label2"),
+									Name: "test label2",
 								},
 							},
 							Head: &github.PullRequestBranch{
@@ -657,8 +669,8 @@ func TestClient_buildRepo(t *testing.T) {
 			Repo: sameRepo,
 		},
 		Labels: []*github.Label{
-			{Name: github.Ptr("bug")},
-			{Name: github.Ptr("enhancement")},
+			{Name: "bug"},
+			{Name: "enhancement"},
 		},
 	}
 
@@ -812,7 +824,7 @@ func TestClient_buildRepoFromEvent(t *testing.T) {
 				},
 			},
 			Labels: []*github.Label{
-				{Name: github.Ptr("priority-high")},
+				{Name: "priority-high"},
 			},
 		},
 	}
@@ -948,44 +960,18 @@ func TestUnPtr(t *testing.T) {
 func TestClient_GetPullRequestFiles(t *testing.T) {
 	mockPR := new(githubMocks.MockPullRequestsServices)
 
-	// First page
-	mockPR.On("ListFiles",
+	mockPR.On("ListFilesIter",
 		mock.Anything,
 		"owner",
 		"repo",
 		123,
 		mock.MatchedBy(func(opts *github.ListOptions) bool {
-			return opts.Page == 0 || opts.Page == 1
-		})).Return(
-		[]*github.CommitFile{
-			{Filename: github.Ptr("file1.go")},
-			{Filename: github.Ptr("file2.go")},
-		},
-		&github.Response{
-			NextPage: 2,
-			Response: &http.Response{StatusCode: 200},
-		},
-		nil,
-	).Once()
-
-	// Second page
-	mockPR.On("ListFiles",
-		mock.Anything,
-		"owner",
-		"repo",
-		123,
-		mock.MatchedBy(func(opts *github.ListOptions) bool {
-			return opts.Page == 2
-		})).Return(
-		[]*github.CommitFile{
-			{Filename: github.Ptr("file3.go")},
-		},
-		&github.Response{
-			NextPage: 0,
-			Response: &http.Response{StatusCode: 200},
-		},
-		nil,
-	).Once()
+			return opts.PerPage == 100
+		})).Return(seqOf([]*github.CommitFile{
+		{Filename: github.Ptr("file1.go")},
+		{Filename: github.Ptr("file2.go")},
+		{Filename: github.Ptr("file3.go")},
+	}, nil)).Once()
 
 	c := &Client{
 		googleClient: &GClient{
@@ -1045,7 +1031,7 @@ func TestClient_CommitStatus(t *testing.T) {
 				"owner",
 				"repo",
 				"abc123",
-				mock.MatchedBy(func(status *github.RepoStatus) bool {
+				mock.MatchedBy(func(status github.RepoStatus) bool {
 					return status.State != nil && *status.State == tt.expectedState
 				})).Return(
 				&github.RepoStatus{},
@@ -1348,9 +1334,9 @@ func TestClient_GetPullRequestFiles_Truncated(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			mockPR := githubMocks.NewMockPullRequestsServices(t)
-			mockPR.On("ListFiles", mock.Anything, "owner", "repo", 123,
+			mockPR.On("ListFilesIter", mock.Anything, "owner", "repo", 123,
 				mock.MatchedBy(func(opts *github.ListOptions) bool { return opts.PerPage == 100 }),
-			).Return(listedFiles(tc.listed), &github.Response{Response: &http.Response{StatusCode: 200}}, nil).Once()
+			).Return(seqOf(listedFiles(tc.listed), nil)).Once()
 			if tc.changed >= 0 {
 				mockPR.On("Get", mock.Anything, "owner", "repo", 123).
 					Return(&github.PullRequest{ChangedFiles: github.Ptr(tc.changed)}, nil, nil).Once()
@@ -1395,37 +1381,29 @@ func TestClient_LoadHook_ForkUsesHeadSHA(t *testing.T) {
 	assert.Equal(t, "upstream", pr.Owner)
 }
 
-func TestClient_GetHookByUrl_Paginates(t *testing.T) {
+func TestClient_GetHookByUrl_StopsAtMatch(t *testing.T) {
 	hook := func(url string) *github.Hook {
 		return &github.Hook{Config: &github.HookConfig{URL: github.Ptr(url)}, Events: []string{"pull_request"}}
 	}
-	page := func(next int) *github.Response {
-		return &github.Response{NextPage: next, Response: &http.Response{StatusCode: http.StatusOK}}
-	}
-	onPage := func(n int) interface{} {
-		return mock.MatchedBy(func(opts *github.ListOptions) bool { return opts.PerPage == 100 && opts.Page == n })
-	}
+	hooks := []*github.Hook{hook("https://other.local"), hook("https://hooks.local"), hook("https://later.local")}
 
-	t.Run("found on a later page", func(t *testing.T) {
-		mockRepos := githubMocks.NewMockRepositoriesServices(t)
-		mockRepos.On("ListHooks", mock.Anything, "owner", "repo", onPage(0)).Return([]*github.Hook{hook("https://other.local")}, page(2), nil).Once()
-		mockRepos.On("ListHooks", mock.Anything, "owner", "repo", onPage(2)).Return([]*github.Hook{hook("https://hooks.local")}, page(0), nil).Once()
+	consumed := 0
+	mockRepos := githubMocks.NewMockRepositoriesServices(t)
+	mockRepos.On("ListHooksIter", mock.Anything, "owner", "repo",
+		mock.MatchedBy(func(opts *github.ListOptions) bool { return opts.PerPage == 100 }),
+	).Return(iter.Seq2[*github.Hook, error](func(yield func(*github.Hook, error) bool) {
+		for _, h := range hooks {
+			consumed++
+			if !yield(h, nil) {
+				return
+			}
+		}
+	})).Once()
 
-		c := &Client{googleClient: &GClient{Repositories: mockRepos}}
-		got, err := c.GetHookByUrl(context.Background(), "https://github.com/owner/repo.git", "https://hooks.local")
+	c := &Client{googleClient: &GClient{Repositories: mockRepos}}
+	got, err := c.GetHookByUrl(context.Background(), "https://github.com/owner/repo.git", "https://hooks.local")
 
-		require.NoError(t, err)
-		assert.Equal(t, "https://hooks.local", got.Url)
-	})
-
-	t.Run("not found on any page", func(t *testing.T) {
-		mockRepos := githubMocks.NewMockRepositoriesServices(t)
-		mockRepos.On("ListHooks", mock.Anything, "owner", "repo", onPage(0)).Return([]*github.Hook{hook("https://other.local")}, page(2), nil).Once()
-		mockRepos.On("ListHooks", mock.Anything, "owner", "repo", onPage(2)).Return([]*github.Hook{}, page(0), nil).Once()
-
-		c := &Client{googleClient: &GClient{Repositories: mockRepos}}
-		_, err := c.GetHookByUrl(context.Background(), "https://github.com/owner/repo.git", "https://hooks.local")
-
-		assert.ErrorIs(t, err, vcs.ErrHookNotFound)
-	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://hooks.local", got.Url)
+	assert.Equal(t, 2, consumed)
 }
