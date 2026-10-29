@@ -59,6 +59,24 @@ func TestCreateGithubClient_GitHubAppUsesBotLogin(t *testing.T) {
 	assert.Equal(t, []string{"/api/v3/app"}, paths)
 }
 
+func TestCreateHttpClient_GitHubAppTokenUsesEnterpriseURL(t *testing.T) {
+	var paths []string
+	cfg := appConfig(t, enterpriseServer(t, func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"token":"installation-token","expires_at":"2999-01-01T00:00:00Z"}`))
+	}))
+
+	_, appTransport, err := createHttpClient(cfg)
+	require.NoError(t, err)
+
+	token, err := appTransport.Token(context.Background())
+	require.NoError(t, err)
+
+	assert.Equal(t, "installation-token", token)
+	assert.Equal(t, []string{"/api/v3/app/installations/5678/access_tokens"}, paths)
+}
+
 func TestCreateGithubClient_GitHubAppKeepsConfiguredUsername(t *testing.T) {
 	cfg := appConfig(t, enterpriseServer(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Errorf("unexpected request %s", r.URL.Path)

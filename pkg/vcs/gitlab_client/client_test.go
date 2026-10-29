@@ -556,3 +556,90 @@ func TestCreateGitlabClient_NoToken(t *testing.T) {
 	})
 	assert.Equal(t, ErrNoToken, err)
 }
+
+func parseGitlabHook(t *testing.T, c *Client, eventType, body string) (vcs.PullRequest, error) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/hook", strings.NewReader(body))
+	req.Header.Set("X-Gitlab-Event", eventType)
+	return c.ParseHook(context.Background(), req, []byte(body))
+}
+
+const forkMergeEvent = `{"object_kind":"merge_request","event_type":"merge_request",
+	"project":{"id":1,"name":"repo","path_with_namespace":"upstream/repo","git_http_url":"https://gitlab.com/upstream/repo.git","default_branch":"main"},
+	"object_attributes":{"iid":12,"action":"open","source_branch":"main","target_branch":"main","source_project_id":2,"target_project_id":1,
+		"last_commit":{"id":"forksha"}}}`
+
+func TestParseHook_ForkMergeRequestTargetsTargetProject(t *testing.T) {
+	_, err := parseGitlabHook(t, &Client{}, "Merge Request Hook", forkMergeEvent)
+	assert.ErrorIs(t, err, vcs.ErrInvalidType, "fork merge requests are ignored unless allowed")
+
+	pr, err := parseGitlabHook(t, &Client{cfg: config.ServerConfig{AllowForkPullRequests: true}}, "Merge Request Hook", forkMergeEvent)
+	require.NoError(t, err)
+
+	assert.Equal(t, "upstream/repo", pr.FullName)
+	assert.Equal(t, "https://gitlab.com/upstream/repo.git", pr.CloneURL)
+	assert.Equal(t, "main", pr.BaseRef)
+	assert.Equal(t, "forksha", pr.HeadRef)
+	assert.Equal(t, "forksha", pr.SHA)
+	assert.Equal(t, 12, pr.CheckID)
+}
+
+func TestParseHook_SameProjectMergeRequestKeepsBranch(t *testing.T) {
+	body := strings.Replace(forkMergeEvent, `"source_project_id":2`, `"source_project_id":1`, 1)
+	body = strings.Replace(body, `"source_branch":"main"`, `"source_branch":"feature"`, 1)
+
+	pr, err := parseGitlabHook(t, &Client{}, "Merge Request Hook", body)
+	require.NoError(t, err)
+
+	assert.Equal(t, "feature", pr.HeadRef)
+	assert.Equal(t, "forksha", pr.SHA)
+}
+
+func TestParseHook_ForkMergeRequestCommentIsGated(t *testing.T) {
+	body := `{"object_kind":"note","event_type":"note",
+		"project":{"id":1,"name":"repo","path_with_namespace":"upstream/repo","git_http_url":"https://gitlab.com/upstream/repo.git","default_branch":"main"},
+		"object_attributes":{"note":"kubechecks again","noteable_type":"MergeRequest","action":"create"},
+		"merge_request":{"iid":12,"source_branch":"patch-1","target_branch":"main","source_project_id":2,"target_project_id":1,"last_commit":{"id":"forksha"}}}`
+	cfg := config.ServerConfig{ReplanCommentMessage: "kubechecks again"}
+
+	_, err := parseGitlabHook(t, &Client{cfg: cfg}, "Note Hook", body)
+	assert.ErrorIs(t, err, vcs.ErrInvalidType)
+
+	cfg.AllowForkPullRequests = true
+	pr, err := parseGitlabHook(t, &Client{cfg: cfg}, "Note Hook", body)
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://gitlab.com/upstream/repo.git", pr.CloneURL)
+	assert.Equal(t, "forksha", pr.HeadRef)
+}
+
+func TestClient_LoadHook_ForkUsesHeadSHA(t *testing.T) {
+	projects := new(gitlabMocks.MockProjectsServices)
+	projects.On("GetProject", "upstream/repo", mock.Anything).Return(&gitlab.Project{
+		Name:              "repo",
+		PathWithNamespace: "upstream/repo",
+		HTTPURLToRepo:     "https://gitlab.com/upstream/repo.git",
+		DefaultBranch:     "main",
+	}, &gitlab.Response{}, nil)
+
+	mrs := new(MockMergeRequestsService)
+	mrs.On("GetMergeRequest", "upstream/repo", int64(12), mock.Anything, mock.Anything).Return(&gitlab.MergeRequest{
+		BasicMergeRequest: gitlab.BasicMergeRequest{
+			IID:             12,
+			SourceBranch:    "main",
+			TargetBranch:    "main",
+			SourceProjectID: 2,
+			TargetProjectID: 1,
+			SHA:             "forksha",
+		},
+	}, &gitlab.Response{}, nil)
+
+	c := &Client{c: &GLClient{Projects: projects, MergeRequests: mrs}}
+	pr, err := c.LoadHook(context.Background(), "upstream/repo!12")
+	require.NoError(t, err)
+
+	assert.Equal(t, "https://gitlab.com/upstream/repo.git", pr.CloneURL)
+	assert.Equal(t, "main", pr.BaseRef)
+	assert.Equal(t, "forksha", pr.HeadRef)
+	assert.Equal(t, "forksha", pr.SHA)
+}
