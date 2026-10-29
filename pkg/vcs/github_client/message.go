@@ -25,7 +25,7 @@ const updateMessageTimeout = 10 * time.Minute
 func (c *Client) MaxCommentLength() int { return MaxCommentLength }
 
 func (c *Client) PostMessage(ctx context.Context, pr vcs.PullRequest, message string) (*msg.Message, error) {
-	_, span := tracer.Start(ctx, "PostMessageToMergeRequest")
+	ctx, span := tracer.Start(ctx, "PostMessageToMergeRequest")
 	defer span.End()
 
 	if len(message) > MaxCommentLength {
@@ -51,7 +51,7 @@ func (c *Client) PostMessage(ctx context.Context, pr vcs.PullRequest, message st
 }
 
 func (c *Client) UpdateMessage(ctx context.Context, pr vcs.PullRequest, noteID int, chunks []string) error {
-	_, span := tracer.Start(ctx, "UpdateMessage")
+	ctx, span := tracer.Start(ctx, "UpdateMessage")
 	defer span.End()
 
 	ctx, cancel := context.WithTimeout(ctx, updateMessageTimeout)
@@ -99,7 +99,7 @@ func (c *Client) isOwnComment(comment *github.IssueComment) bool {
 // This is different from updating an existing message, as this will delete comments from previous runs of the bot
 // Whereas updates occur mid-execution
 func (c *Client) pruneOldComments(ctx context.Context, pr vcs.PullRequest, comments []*github.IssueComment) error {
-	_, span := tracer.Start(ctx, "pruneOldComments")
+	ctx, span := tracer.Start(ctx, "pruneOldComments")
 	defer span.End()
 
 	log.Debug().Caller().Msgf("Pruning messages from PR %d in repo %s", pr.CheckID, pr.FullName)
@@ -154,7 +154,7 @@ func (c *Client) minimizedComments(ctx context.Context, nodeIDs []string) (map[s
 }
 
 func (c *Client) hideOutdatedMessages(ctx context.Context, pr vcs.PullRequest, comments []*github.IssueComment) error {
-	_, span := tracer.Start(ctx, "hideOutdatedComments")
+	ctx, span := tracer.Start(ctx, "hideOutdatedComments")
 	defer span.End()
 
 	log.Debug().Caller().Msgf("Hiding kubecheck messages in PR %d in repo %s", pr.CheckID, pr.FullName)
@@ -204,7 +204,7 @@ func (c *Client) hideOutdatedMessages(ctx context.Context, pr vcs.PullRequest, c
 }
 
 func (c *Client) TidyOutdatedComments(ctx context.Context, pr vcs.PullRequest) error {
-	_, span := tracer.Start(ctx, "TidyOutdatedComments")
+	ctx, span := tracer.Start(ctx, "TidyOutdatedComments")
 	defer span.End()
 
 	var allComments []*github.IssueComment

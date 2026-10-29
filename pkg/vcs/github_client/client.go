@@ -12,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"github.com/shurcooL/githubv4"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"golang.org/x/oauth2"
 
@@ -65,7 +66,7 @@ func CreateGithubClient(ctx context.Context, cfg config.ServerConfig) (*Client, 
 		shurcoolClient *githubv4.Client
 	)
 
-	githubClient, appTransport, err := createHttpClient(ctx, cfg)
+	githubClient, appTransport, err := createHttpClient(cfg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create github http client")
 	}
@@ -135,7 +136,7 @@ func CreateGithubClient(ctx context.Context, cfg config.ServerConfig) (*Client, 
 // appBotLogin returns the login GitHub attributes the App's activity to. Installation
 // tokens cannot read /user, so the slug is fetched with an app JWT instead.
 func appBotLogin(ctx context.Context, cfg config.ServerConfig) (string, error) {
-	appsTransport, err := ghinstallation.NewAppsTransport(http.DefaultTransport, cfg.GithubAppID, []byte(cfg.GithubPrivateKey))
+	appsTransport, err := ghinstallation.NewAppsTransport(otelhttp.NewTransport(http.DefaultTransport), cfg.GithubAppID, []byte(cfg.GithubPrivateKey))
 	if err != nil {
 		return "", errors.Wrap(err, "failed to create github app jwt transport")
 	}
@@ -163,11 +164,11 @@ func appBotLogin(ctx context.Context, cfg config.ServerConfig) (string, error) {
 // For GitHub App auth it also returns the underlying ghinstallation.Transport so callers
 // can fetch installation tokens directly (used by GetAuthHeaders for archive downloads).
 // For PAT auth the second return value is nil.
-func createHttpClient(ctx context.Context, cfg config.ServerConfig) (*http.Client, *ghinstallation.Transport, error) {
+func createHttpClient(cfg config.ServerConfig) (*http.Client, *ghinstallation.Transport, error) {
 	// Initialize the GitHub client with app key if provided
 	if cfg.IsGithubApp() {
 		appTransport, err := ghinstallation.New(
-			http.DefaultTransport, cfg.GithubAppID, cfg.GithubInstallationID, []byte(cfg.GithubPrivateKey),
+			otelhttp.NewTransport(http.DefaultTransport), cfg.GithubAppID, cfg.GithubInstallationID, []byte(cfg.GithubPrivateKey),
 		)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "failed to create github app transport")
@@ -183,7 +184,10 @@ func createHttpClient(ctx context.Context, cfg config.ServerConfig) (*http.Clien
 		ts := oauth2.StaticTokenSource(
 			&oauth2.Token{AccessToken: vcsToken},
 		)
-		return oauth2.NewClient(ctx, ts), nil, nil
+		return &http.Client{Transport: &oauth2.Transport{
+			Source: oauth2.ReuseTokenSource(nil, ts),
+			Base:   otelhttp.NewTransport(http.DefaultTransport),
+		}}, nil, nil
 	}
 
 	return nil, nil, errors.New("Either GitHub token or GitHub App credentials (App ID, Installation ID, Private Key) must be set")
