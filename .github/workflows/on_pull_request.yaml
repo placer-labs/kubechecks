@@ -17,14 +17,14 @@ on:
 env:
   FS_TAG: 0.0.0-pr${{ github.event.pull_request.number }}
 
+permissions: {}
+
 jobs:
   build-binaries:
     runs-on: ubuntu-24.04
 
     permissions:
       contents: read
-      packages: write
-      pull-requests: write
 
     strategy:
       fail-fast: false
@@ -37,6 +37,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
@@ -89,6 +91,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Download amd64 binary
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -159,23 +163,28 @@ jobs:
     steps:
       - name: Checkout source code
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Set up Helm
         uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
 
       - name: Login to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GH_TOKEN" | helm registry login ghcr.io -u "$GH_ACTOR" --password-stdin
 
       - name: Update chart version and appVersion
         run: |
           # Update kubechecks chart
-          sed -i "s/^version:.*/version: ${{ env.CHART_VERSION }}/" charts/kubechecks/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${{ env.APP_VERSION }}\"/" charts/kubechecks/Chart.yaml
+          sed -i "s/^version:.*/version: ${CHART_VERSION}/" charts/kubechecks/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${APP_VERSION}\"/" charts/kubechecks/Chart.yaml
 
       - name: Package and push kubechecks chart
         run: |
           helm package charts/kubechecks
-          helm push kubechecks-${{ env.CHART_VERSION }}.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
+          helm push "kubechecks-${CHART_VERSION}.tgz" "oci://ghcr.io/${GITHUB_REPOSITORY_OWNER}/charts"
 
 
       - name: Update PR comment with chart info
