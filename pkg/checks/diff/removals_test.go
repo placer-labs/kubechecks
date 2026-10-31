@@ -158,6 +158,26 @@ func TestApplyFieldRemovals_ClientSideResidueIsRetained(t *testing.T) {
 	assert.Contains(t, predictedLabels(t, res), "app.kubernetes.io/part-of")
 }
 
+// The API server defaults a port's protocol and records it in the list key,
+// while charts usually leave it out of the manifest.
+func TestApplyFieldRemovals_DefaultedKeyFieldIsNotARemoval(t *testing.T) {
+	live := mustObj(t, `{"apiVersion": "v1", "kind": "Service", "metadata": {"name": "jenkins"},
+	  "spec": {"ports": [{"name": "http", "port": 8080, "protocol": "TCP", "targetPort": 8080}]}}`)
+	target := mustObj(t, `{"apiVersion": "v1", "kind": "Service", "metadata": {"name": "jenkins"},
+	  "spec": {"ports": [{"name": "http", "port": 8080, "targetPort": 8080}]}}`)
+	res, err := diff.Diff(target, live)
+	require.NoError(t, err)
+	before := string(res.PredictedLive)
+
+	mf := []metav1.ManagedFieldsEntry{entry(argoCDSSAManager, metav1.ManagedFieldsOperationApply,
+		`{"f:spec":{"f:ports":{"k:{\"port\":8080,\"protocol\":\"TCP\"}":{".":{},"f:name":{},"f:port":{},"f:targetPort":{}}}}}`)}
+
+	retained, err := applyFieldRemovals(res, mf, target)
+	require.NoError(t, err)
+	assert.Empty(t, retained)
+	assert.Equal(t, before, string(res.PredictedLive))
+}
+
 func TestApplyFieldRemovals_NoManagedFieldsIsNoop(t *testing.T) {
 	res := localDiff(t)
 	before := string(res.PredictedLive)

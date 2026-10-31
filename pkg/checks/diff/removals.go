@@ -225,15 +225,21 @@ func listIndex(l []any, pe fieldpath.PathElement) int {
 			if !ok {
 				continue
 			}
-			match := true
+			// Managed-field keys carry server-defaulted key fields (a port's
+			// protocol) that a rendered manifest usually omits.
+			matched, match := 0, true
 			for _, f := range *pe.Key {
 				v, ok := m[f.Name]
-				if !ok || !value.Equals(value.NewValueInterface(v), f.Value) {
+				if !ok {
+					continue
+				}
+				if !value.Equals(value.NewValueInterface(v), f.Value) {
 					match = false
 					break
 				}
+				matched++
 			}
-			if match {
+			if match && matched > 0 {
 				return i
 			}
 		case pe.Value != nil:
