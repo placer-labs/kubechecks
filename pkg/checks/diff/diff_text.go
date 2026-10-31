@@ -70,9 +70,11 @@ func GenerateDiffText(ctx context.Context, request checks.Request) (string, erro
 			return "", err
 		}
 
-		if diffRes.Modified || item.target == nil || item.live == nil {
+		retained := predictFieldRemovals(app, resources, item, &diffRes)
+
+		if diffRes.Modified || len(retained) > 0 || item.target == nil || item.live == nil {
 			resourceId := fmt.Sprintf("%s/%s %s/%s", item.key.Group, item.key.Kind, item.key.Namespace, item.key.Name)
-			err := addResourceDiffToMessage(ctx, &diffBuffer, resourceId, item, diffRes)
+			err := addResourceDiffToMessage(ctx, &diffBuffer, resourceId, item, diffRes, retained)
 			if err != nil {
 				return "", err
 			}

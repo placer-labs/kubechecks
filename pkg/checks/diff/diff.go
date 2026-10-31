@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/argoproj/argo-cd/gitops-engine/pkg/diff"
+	"github.com/argoproj/argo-cd/gitops-engine/pkg/sync/common"
 	"github.com/argoproj/argo-cd/gitops-engine/pkg/sync/hook"
 	"github.com/argoproj/argo-cd/gitops-engine/pkg/sync/ignore"
+	"github.com/argoproj/argo-cd/gitops-engine/pkg/sync/resource"
 	"github.com/argoproj/argo-cd/gitops-engine/pkg/utils/kube"
 	cmdutil "github.com/argoproj/argo-cd/v3/cmd/util"
 	"github.com/argoproj/argo-cd/v3/controller"
@@ -26,6 +28,7 @@ import (
 	"github.com/pmezard/go-difflib/difflib"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -139,8 +142,10 @@ func Check(ctx context.Context, request checks.Request) (msg.Result, error) {
 			}
 		}
 
-		if diffRes.Modified || item.target == nil || item.live == nil {
-			err := addResourceDiffToMessage(ctx, &diffBuffer, resourceId, item, diffRes)
+		retained := predictFieldRemovals(app, resources, item, &diffRes)
+
+		if diffRes.Modified || len(retained) > 0 || item.target == nil || item.live == nil {
+			err := addResourceDiffToMessage(ctx, &diffBuffer, resourceId, item, diffRes, retained)
 			if err != nil {
 				return msg.Result{}, err
 			}
@@ -196,7 +201,7 @@ func processResources(item objKeyLiveTarget, diffRes diff.DiffResult, request ch
 	}
 }
 
-func addResourceDiffToMessage(ctx context.Context, diffBuffer *strings.Builder, resourceId string, item objKeyLiveTarget, diffRes diff.DiffResult) error {
+func addResourceDiffToMessage(ctx context.Context, diffBuffer *strings.Builder, resourceId string, item objKeyLiveTarget, diffRes diff.DiffResult, retained []retainedField) error {
 	_, span := tracer.Start(ctx, "addResourceDiffToMessage")
 	defer span.End()
 
@@ -221,8 +226,44 @@ func addResourceDiffToMessage(ctx context.Context, diffBuffer *strings.Builder, 
 		telemetry.SetError(span, err, "Print Diff")
 		return err
 	}
+	if err := writeRetained(diffBuffer, retained); err != nil {
+		telemetry.SetError(span, err, "Print Retained Fields")
+		return err
+	}
 
 	return nil
+}
+
+func predictFieldRemovals(app argoappv1.Application, resources []*argoappv1.ResourceDiff, item objKeyLiveTarget, diffRes *diff.DiffResult) []retainedField {
+	if item.live == nil || item.target == nil || !syncsServerSide(app, item.target) {
+		return nil
+	}
+	retained, err := applyFieldRemovals(diffRes, liveManagedFields(resources, item.key), item.target)
+	if err != nil {
+		log.Warn().Err(err).Str("resource", item.key.String()).Msg("failed to predict server-side apply field removals")
+	}
+	return retained
+}
+
+func syncsServerSide(app argoappv1.Application, target *unstructured.Unstructured) bool {
+	if app.Spec.SyncPolicy != nil && app.Spec.SyncPolicy.SyncOptions.HasOption(common.SyncOptionServerSideApply) {
+		return true
+	}
+	return target != nil && resource.HasAnnotationOption(target, common.AnnotationSyncOptions, common.SyncOptionServerSideApply)
+}
+
+// liveManagedFields reads managedFields from the raw live state, since
+// NormalizedLiveState has them stripped.
+func liveManagedFields(resources []*argoappv1.ResourceDiff, key kube.ResourceKey) []metav1.ManagedFieldsEntry {
+	res := findResourceDiff(resources, key)
+	if res == nil || res.LiveState == "" {
+		return nil
+	}
+	var live unstructured.Unstructured
+	if err := json.Unmarshal([]byte(res.LiveState), &live.Object); err != nil {
+		return nil
+	}
+	return live.GetManagedFields()
 }
 
 func generateDiff(ctx context.Context, request checks.Request, argoSettings *settings.Settings, item objKeyLiveTarget) (diff.DiffResult, error) {
