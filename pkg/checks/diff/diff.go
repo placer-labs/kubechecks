@@ -226,7 +226,10 @@ func addResourceDiffToMessage(ctx context.Context, diffBuffer *strings.Builder, 
 		telemetry.SetError(span, err, "Print Diff")
 		return err
 	}
-	writeRetained(diffBuffer, retained)
+	if err := writeRetained(diffBuffer, retained); err != nil {
+		telemetry.SetError(span, err, "Print Retained Fields")
+		return err
+	}
 
 	return nil
 }

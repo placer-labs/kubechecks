@@ -137,7 +137,7 @@ func TestApplyFieldRemovals_CoOwnedFieldIsRetained(t *testing.T) {
 	assert.Contains(t, predictedLabels(t, res), "app.kubernetes.io/part-of")
 
 	var b strings.Builder
-	writeRetained(&b, retained)
+	require.NoError(t, writeRetained(&b, retained))
 	assert.Equal(t, "! removed from git but kept on sync, still owned by helm/Update: .spec.template.metadata.labels.app.kubernetes.io/part-of\n", b.String())
 }
 

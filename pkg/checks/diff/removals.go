@@ -115,7 +115,7 @@ func splitManagedFields(entries []metav1.ManagedFieldsEntry) (*fieldpath.Set, []
 			continue
 		}
 		s := &fieldpath.Set{}
-		if err := s.FromJSON(bytes.NewReader(e.FieldsV1.Raw)); err != nil && err != io.EOF {
+		if err := s.FromJSON(bytes.NewReader(e.FieldsV1.GetRawBytes())); err != nil && err != io.EOF {
 			return nil, nil, fmt.Errorf("failed to decode managed fields of %s: %w", e.Manager, err)
 		}
 		if e.Manager == argoCDSSAManager && e.Operation == metav1.ManagedFieldsOperationApply {
@@ -353,8 +353,11 @@ func uniqueSorted(in []string) []string {
 	return out
 }
 
-func writeRetained(w io.Writer, retained []retainedField) {
+func writeRetained(w io.Writer, retained []retainedField) error {
 	for _, r := range retained {
-		fmt.Fprintf(w, "! removed from git but kept on sync, still owned by %s: %s\n", strings.Join(r.owners, ", "), r.path.String())
+		if _, err := fmt.Fprintf(w, "! removed from git but kept on sync, still owned by %s: %s\n", strings.Join(r.owners, ", "), r.path.String()); err != nil {
+			return err
+		}
 	}
+	return nil
 }
