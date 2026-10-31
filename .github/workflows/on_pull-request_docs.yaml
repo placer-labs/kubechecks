@@ -9,12 +9,19 @@ on:
       - 'go.mod'
       - 'go.sum'
       - 'docs/usage.md*'
+
+permissions: {}
+
 jobs:
   lint-docs:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Parse tool versions
         uses: wistia/parse-tool-versions@fecb17a0772bd6f63716ed4476501da191fdc61d # v1.0.1

@@ -10,6 +10,8 @@ concurrency:
   group: placer-image-${{ github.ref }}
   cancel-in-progress: false
 
+permissions: {}
+
 jobs:
   build-image:
     runs-on: ubuntu-24.04
@@ -20,6 +22,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The production stage runs `/app/kubechecks help` to verify the binary,
       # which executes target-arch code, so arm64 needs emulation. The Go
@@ -65,6 +69,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Push the chart unless its version is already published
         env:

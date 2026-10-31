@@ -3,6 +3,8 @@ on:
     branches:
       - main
 
+permissions: {}
+
 jobs:
   release-helm:
     runs-on: ubuntu-24.04

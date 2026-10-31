@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: "0 9 * * 1"   # 9 am on Monday
 
+permissions: {}
+
 jobs:
   clean-up:
     runs-on: ubuntu-24.04

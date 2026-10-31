@@ -1,0 +1,6 @@
+rules:
+  artipacked:
+    ignore:
+      # chart-releaser pushes the index to gh-pages through the checkout's
+      # persisted credentials.
+      - on_push_to_main.yaml

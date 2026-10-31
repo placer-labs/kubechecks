@@ -5,6 +5,8 @@ on:
   release:
     types: [published]
 
+permissions: {}
+
 jobs:
   build-binaries:
     runs-on: ubuntu-24.04
@@ -19,32 +21,26 @@ jobs:
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.26.x"
           cache: false
 
-      - name: Cache Go modules + build cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-linux-${{ matrix.arch }}
-          restore-keys: |
-            ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-
-            ${{ runner.os }}-go-
-
       - name: Build for ${{ matrix.arch }}
+        env:
+          GIT_COMMIT: ${{ github.sha }}
+          GIT_TAG: ${{ github.ref_name }}
         run: |
           mkdir -p out/linux-${{ matrix.arch }}
           time env CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.arch }} \
             go build \
               -trimpath \
               -ldflags="-s -w \
-                -X github.com/zapier/kubechecks/pkg.GitCommit=${{ github.sha }} \
-                -X github.com/zapier/kubechecks/pkg.GitTag=${{ github.ref_name }}" \
+                -X github.com/zapier/kubechecks/pkg.GitCommit=${GIT_COMMIT} \
+                -X github.com/zapier/kubechecks/pkg.GitTag=${GIT_TAG}" \
               -o out/linux-${{ matrix.arch }}/kubechecks \
               .
 
@@ -64,6 +60,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
 
       - name: Download amd64 binary
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
