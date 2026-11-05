@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -354,11 +355,25 @@ func (ce *CheckEvent) finalStatus(ctx context.Context, status pkg.CommitState) {
 	ce.CommitStatus(ctx, status)
 }
 
-func (ce *CheckEvent) process(ctx context.Context) error {
+func (ce *CheckEvent) process(ctx context.Context) (retErr error) {
 	start := time.Now()
 
 	_, span := tracer.Start(ctx, "GenerateListOfAffectedApps")
 	defer span.End()
+
+	defer func() {
+		if r := recover(); r != nil {
+			stack := debug.Stack()
+			ce.logger.Error().Caller().Any("error", r).Str("stack", string(stack)).Msg("panic while processing check event")
+			telemetry.SetError(span, fmt.Errorf("%v", r), "panic while processing check event")
+			// A superseded check posts nothing (see settle); otherwise report even if
+			// ctx is cancelled, like finalStatus, so the PR is never left pending.
+			if !ce.superseded && !errors.Is(context.Cause(ctx), pkg.ErrCheckSuperseded) {
+				ce.reportPanic(context.WithoutCancel(ctx), r, stack)
+			}
+			retErr = fmt.Errorf("panic while processing check event: %v", r)
+		}
+	}()
 
 	var repo *git.Repo
 	var err error
