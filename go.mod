@@ -26,7 +26,7 @@ require (
 	github.com/heptiolabs/healthcheck v0.0.0-20211123025425-613501dd5deb
 	github.com/kubepug/kubepug v1.7.1
 	github.com/labstack/echo-contrib v0.50.1
-	github.com/labstack/echo/v4 v4.16.2
+	github.com/labstack/echo/v4 v4.16.6
 	github.com/masterminds/semver v1.5.0
 	github.com/olekukonko/tablewriter v1.1.5
 	github.com/open-policy-agent/conftest v0.65.0
