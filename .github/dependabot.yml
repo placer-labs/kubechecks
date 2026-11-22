@@ -1,24 +1,27 @@
+# Security updates only. Dependabot opens PRs solely to fix known
+# vulnerabilities, one grouped PR per ecosystem. Routine version bumps are
+# disabled via open-pull-requests-limit: 0 (that limit applies only to version
+# updates). Avoid "ignore" rules here: they suppress security updates too.
 version: 2
 updates:
-  - directory: "/"
-    groups:
-      minor-patch:
-        update-types:
-          - "minor"
-          - "patch"
-    ignore:
-      # projects that aren't at 1.0 yet tend to have breaking changes,
-      # so we don't batch those up with this "stable small changes" group
-      - dependency-name: "*"
-        versions: "<1"
-    package-ecosystem: "gomod"
+  - package-ecosystem: "gomod"
+    directory: "/"
     schedule:
       interval: "weekly"
-  - directory: "/"
+    open-pull-requests-limit: 0  # no version updates; security updates still open
+    labels: ["dependencies", "security"]
     groups:
-      github-actions:
-        patterns:
-          - "*"
-    package-ecosystem: "github-actions"
+      go-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 0  # no version updates; security updates still open
+    labels: ["dependencies", "security"]
+    groups:
+      actions-security:
+        applies-to: security-updates
+        patterns: ["*"]
