@@ -1,0 +1,44 @@
+name: all ci
+
+# Single required status check for branch protection. Most PR workflows here
+# are path-filtered, and a required check that never runs blocks the PR
+# forever, so this job runs on every PR, waits for whichever other workflows
+# were triggered for the head commit, and fails if any of them failed.
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  all-ci-passed:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    permissions:
+      actions: read
+
+    steps:
+      - name: Wait for the other PR workflows
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          SELF_RUN_ID: ${{ github.run_id }}
+        run: |
+          # Give every triggered workflow time to register its run.
+          sleep 60
+          while :; do
+            runs=$(gh api "repos/${REPO}/actions/runs?head_sha=${SHA}&event=pull_request&per_page=100" \
+              --jq "[.workflow_runs[] | select(.id != ${SELF_RUN_ID})]
+                    | group_by(.workflow_id) | map(max_by(.id))")
+            pending=$(jq -r '[.[] | select(.status != "completed") | .name] | join(", ")' <<<"$runs")
+            if [[ -z "$pending" ]]; then break; fi
+            echo "Waiting for: $pending"
+            sleep 30
+          done
+          jq -r '.[] | "\(.name): \(.conclusion)"' <<<"$runs"
+          failed=$(jq -r '[.[] | select(.conclusion | IN("success","skipped","neutral") | not) | .name] | join(", ")' <<<"$runs")
+          if [[ -n "$failed" ]]; then
+            echo "::error::Failed workflows: $failed"
+            exit 1
+          fi

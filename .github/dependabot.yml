@@ -14,9 +14,8 @@ updates:
     package-ecosystem: "gomod"
     schedule:
       interval: "weekly"
-    # Only propose releases that have been public for a week. Keep in sync with
-    # MIN_AGE_DAYS in workflows/dependabot_automerge.yaml, which applies the
-    # same age floor to security updates (which ignore cooldown).
+    # Only propose releases that have been public for a week. Security updates
+    # ignore cooldown, so CVE fixes arrive (and auto-merge) immediately.
     cooldown:
       default-days: 7
   - directory: "/"
