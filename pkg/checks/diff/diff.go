@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/argoproj/argo-cd/gitops-engine/pkg/diff"
-	"github.com/argoproj/argo-cd/gitops-engine/pkg/sync/common"
-	"github.com/argoproj/argo-cd/gitops-engine/pkg/sync/hook"
-	"github.com/argoproj/argo-cd/gitops-engine/pkg/sync/ignore"
-	"github.com/argoproj/argo-cd/gitops-engine/pkg/sync/resource"
-	"github.com/argoproj/argo-cd/gitops-engine/pkg/utils/kube"
+	"github.com/argoproj/argo-cd/gitops-engine/v3/pkg/diff"
+	"github.com/argoproj/argo-cd/gitops-engine/v3/pkg/sync/common"
+	"github.com/argoproj/argo-cd/gitops-engine/v3/pkg/sync/hook"
+	"github.com/argoproj/argo-cd/gitops-engine/v3/pkg/sync/ignore"
+	"github.com/argoproj/argo-cd/gitops-engine/v3/pkg/sync/resource"
+	"github.com/argoproj/argo-cd/gitops-engine/v3/pkg/utils/kube"
 	cmdutil "github.com/argoproj/argo-cd/v3/cmd/util"
 	"github.com/argoproj/argo-cd/v3/controller"
 	"github.com/argoproj/argo-cd/v3/pkg/apiclient/application"
@@ -291,7 +291,7 @@ func generateDiff(ctx context.Context, request checks.Request, argoSettings *set
 		return diff.DiffResult{}, err
 	}
 
-	diffRes, err := argodiff.StateDiff(item.live, item.target, diffConfig)
+	diffRes, err := argodiff.StateDiff(ctx, item.live, item.target, diffConfig)
 	if err != nil {
 		telemetry.SetError(span, err, "State Diff")
 		return diff.DiffResult{}, err

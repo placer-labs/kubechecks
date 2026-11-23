@@ -1,11 +1,12 @@
 package diff
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 
-	"github.com/argoproj/argo-cd/gitops-engine/pkg/diff"
+	"github.com/argoproj/argo-cd/gitops-engine/v3/pkg/diff"
 	argoappv1 "github.com/argoproj/argo-cd/v3/pkg/apis/application/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,7 +79,7 @@ func predictedLabels(t *testing.T, res diff.DiffResult) map[string]any {
 
 func localDiff(t *testing.T) diff.DiffResult {
 	t.Helper()
-	res, err := diff.Diff(mustObj(t, lokiTarget), mustObj(t, lokiLive))
+	res, err := diff.Diff(context.Background(), mustObj(t, lokiTarget), mustObj(t, lokiLive))
 	require.NoError(t, err)
 	return *res
 }
@@ -165,7 +166,7 @@ func TestApplyFieldRemovals_DefaultedKeyFieldIsNotARemoval(t *testing.T) {
 	  "spec": {"ports": [{"name": "http", "port": 8080, "protocol": "TCP", "targetPort": 8080}]}}`)
 	target := mustObj(t, `{"apiVersion": "v1", "kind": "Service", "metadata": {"name": "jenkins"},
 	  "spec": {"ports": [{"name": "http", "port": 8080, "targetPort": 8080}]}}`)
-	res, err := diff.Diff(target, live)
+	res, err := diff.Diff(context.Background(), target, live)
 	require.NoError(t, err)
 	before := string(res.PredictedLive)
 
