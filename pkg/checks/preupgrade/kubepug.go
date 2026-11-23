@@ -49,7 +49,7 @@ func checkApp(ctx context.Context, ctr container.Container, appName, targetKuber
 
 	for i, manifest := range manifests {
 		tmpFile := fmt.Sprintf("%s/%b.yaml", tempDir, i)
-		if err = os.WriteFile(tmpFile, []byte(manifest), 0666); err != nil {
+		if err = os.WriteFile(tmpFile, []byte(manifest), 0o600); err != nil {
 			logger.Error().Caller().Err(err).Str("path", tmpFile).Msg("failed to write file")
 		}
 	}

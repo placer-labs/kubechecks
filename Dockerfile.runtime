@@ -1,8 +1,13 @@
-FROM gcr.io/distroless/base-debian12
+# kubechecks is built with CGO_ENABLED=0, so it needs no libc: distroless/static
+# carries only ca-certificates, tzdata and /etc/passwd (no OpenSSL or glibc CVEs).
+# :nonroot runs as uid 65532. Pinned by digest; bump it with the image.
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 
 # Buildx will set TARGETARCH (amd64 / arm64)
 ARG TARGETARCH
 
 COPY kubechecks-${TARGETARCH} /usr/local/bin/kubechecks
+
+USER nonroot:nonroot
 
 ENTRYPOINT ["/usr/local/bin/kubechecks"]

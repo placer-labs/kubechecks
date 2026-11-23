@@ -27,7 +27,7 @@ func addFile(repoRoot string, tempDir string, relPath string) error {
 	}
 
 	dstdir := filepath.Dir(tempPath)
-	if err := os.MkdirAll(dstdir, 0o777); err != nil {
+	if err := os.MkdirAll(dstdir, 0o700); err != nil {
 		return errors.Wrap(err, "failed to make directories")
 	}
 
