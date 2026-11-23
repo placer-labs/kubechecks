@@ -88,7 +88,10 @@ func (a *ArgoClient) argoSettings() (*argosettings.SettingsManager, db.ArgoDB) {
 }
 
 func (a *ArgoClient) createRepoServerClient() (repoapiclient.RepoServerServiceClient, *grpc.ClientConn, error) {
-	tlsConfig := tls.Config{InsecureSkipVerify: a.cfg.ArgoCDRepositoryInsecure}
+	tlsConfig := tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: a.cfg.ArgoCDRepositoryInsecure, // #nosec G402 -- opt-in via --argocd-repository-insecure
+	}
 	conn, err := grpc.NewClient(a.cfg.ArgoCDRepositoryEndpoint,
 		grpc.WithTransportCredentials(
 			credentials.NewTLS(&tlsConfig),

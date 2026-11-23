@@ -78,7 +78,7 @@ func NewPersistentRepoManager(cfg config.ServerConfig, persistentDir string) *Pe
 	}
 
 	// Create persistent directory if it doesn't exist
-	if err := os.MkdirAll(persistentDir, 0755); err != nil {
+	if err := os.MkdirAll(persistentDir, 0o700); err != nil {
 		log.Fatal().Err(err).Str("dir", persistentDir).Msg("failed to create persistent repo directory")
 	}
 

@@ -53,7 +53,7 @@ func NewCache(cfg Config) *Cache {
 	}
 
 	// Create base directory
-	if err := os.MkdirAll(cfg.BaseDir, 0755); err != nil {
+	if err := os.MkdirAll(cfg.BaseDir, 0o700); err != nil {
 		log.Fatal().Err(err).Str("dir", cfg.BaseDir).Msg("failed to create archive cache directory")
 	}
 

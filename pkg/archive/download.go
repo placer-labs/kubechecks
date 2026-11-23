@@ -210,7 +210,7 @@ func (d *Downloader) extract(zipData []byte, targetDir string) (string, error) {
 	}()
 
 	// Create target directory
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
 		archiveExtractFailed.Inc()
 		return "", errors.Wrap(err, "failed to create target directory")
 	}
@@ -316,7 +316,7 @@ func (d *Downloader) extractFile(file *zip.File, root *os.Root) error {
 
 	// Create parent directories
 	if dir := filepath.Dir(name); dir != "." {
-		if err := root.MkdirAll(dir, 0755); err != nil {
+		if err := root.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
 	}

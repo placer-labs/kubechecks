@@ -69,7 +69,7 @@ func main() {
 
 	vars := getSortedFlags(flagUsage)
 
-	f, err := os.OpenFile(outputFilename, os.O_WRONLY|os.O_CREATE, 0o666)
+	f, err := os.OpenFile(outputFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		panic(err)
 	}
