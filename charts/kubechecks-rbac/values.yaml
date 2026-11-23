@@ -4,3 +4,9 @@ clusterRoleBindingGroup: "kubechecks-remote-group"
 
 # namespace to create the ClusterRole and RoleBinding, this has to match the argocd is operating.
 namespace: "argocd"
+
+# Also grant get/list/watch on Secrets in every namespace. kubechecks only reads
+# repository and cluster credentials from the Argo CD namespace above, which a
+# namespaced Role covers, so this is off. Turn it on only if those Secrets live
+# elsewhere.
+clusterWideSecrets: false
