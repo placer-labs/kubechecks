@@ -1,0 +1,76 @@
+name: trivy
+
+# Scans the Helm charts for misconfigurations and the published placer image
+# for vulnerabilities. Only HIGH/CRITICAL findings fail the job, and for the
+# image only ones with a fix available, so an unpatched upstream CVE can't
+# block every build. Accepted findings live in .trivyignore with a reason.
+#
+# The image is also scanned right after it is built, in
+# on_push_to_placer_main.yaml. The weekly run here catches CVEs published
+# after the last build.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/trivy.yaml'
+      - '.github/install-trivy.sh'
+      - '.tool-versions'
+      - '.trivyignore'
+      - 'charts/**'
+  schedule:
+    - cron: "0 7 * * 1"   # 7 am on Monday
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  # The default ghcr.io mirror rate-limits shared runners; ECR Public carries
+  # the same database.
+  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+  TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db:1
+
+jobs:
+  scan-charts:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Trivy
+        run: ./.github/install-trivy.sh
+
+      - name: Scan the Helm charts
+        run: |
+          trivy config --exit-code 0 charts/
+          trivy config --exit-code 1 --severity HIGH,CRITICAL charts/
+
+  scan-image:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Trivy
+        run: ./.github/install-trivy.sh
+
+      - name: Scan the placer image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}:placer-main
+        run: |
+          trivy image --scanners vuln --format sarif --output trivy-image.sarif "$IMAGE"
+          trivy image --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 "$IMAGE"
+
+      - name: Upload results to code scanning
+        if: always() && hashFiles('trivy-image.sarif') != ''
+        uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
