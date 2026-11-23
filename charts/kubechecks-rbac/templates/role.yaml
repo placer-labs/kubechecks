@@ -1,11 +1,25 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ .Values.clusterRoleName | default "kubechecks-remote-clusterrole" }}
+  name: {{ .Values.clusterRoleName | default "kubechecks-remote-role" }}
 rules:
   - apiGroups: ['argoproj.io']
     resources: ['applications', 'appprojects', 'applicationsets', 'services']
     verbs: ['get', 'list', 'watch']
+  {{- if .Values.clusterWideSecrets }}
+  - apiGroups: [''] # The core API group, which is indicated by an empty string
+    resources: ['secrets']
+    verbs: ['get', 'list', 'watch']
+  {{- end }}
+---
+# kubechecks reads repository and cluster credentials from the Argo CD
+# namespace only, so Secrets are granted there instead of cluster-wide.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.clusterRoleName | default "kubechecks-remote-role" }}
+  namespace: {{ .Values.namespace | default "argocd" }}
+rules:
   - apiGroups: [''] # The core API group, which is indicated by an empty string
     resources: ['secrets']
     verbs: ['get', 'list', 'watch']

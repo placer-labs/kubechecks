@@ -11,6 +11,8 @@ tests:
     asserts:
       - isKind:
           of: ClusterRoleBinding
+        documentIndex: 0
       - equal:
           path: metadata.name
           value: kubechecks-test-rolebinding-rbac
+        documentIndex: 0

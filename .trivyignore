@@ -1,0 +1,13 @@
+# Accepted Trivy findings. Each entry needs a reason.
+
+# KSV-0113: Role can read Secrets in the Argo CD namespace.
+# kubechecks reuses Argo CD's settings manager and repository DB, which
+# list and watch every Secret and ConfigMap in argocd.namespace to find
+# repository and cluster credentials. RBAC can't filter list/watch by label,
+# and the Role is already read-only (get/list/watch) and limited to that one
+# namespace. Cluster-wide access stays behind rbac.clusterWideSecrets (off).
+KSV-0113
+
+# KSV-0125: "image from an untrusted registry". Trivy's trusted list doesn't
+# include ghcr.io, where both upstream and placer images are published.
+KSV-0125

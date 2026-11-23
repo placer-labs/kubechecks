@@ -20,8 +20,13 @@
     },
     "namespace": {
       "type": "string",
-      "description": "The namespace where the Role and RoleBinding will be created.",
+      "description": "The Argo CD namespace. The Role and RoleBinding granting Secrets access are created here.",
       "default": "argocd"
+    },
+    "clusterWideSecrets": {
+      "type": "boolean",
+      "description": "Also grant get/list/watch on Secrets in every namespace through the ClusterRole.",
+      "default": false
     }
   },
   "required": ["clusterRoleName", "clusterRoleBindingName", "clusterRoleBindingGroup", "namespace"],

@@ -1,7 +1,7 @@
 apiVersion: v2
 name: kubechecks-rbac
 description: A Helm chart for kubechecks Role and RoleBinding
-version: 0.4.5
+version: 0.5.0
 type: application
 maintainers:
   - name: zapier

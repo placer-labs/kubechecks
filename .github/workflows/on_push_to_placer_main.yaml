@@ -60,6 +60,42 @@ jobs:
             ghcr.io/${{ github.repository }}:placer-main-${{ github.sha }}
             ghcr.io/${{ github.repository }}:placer-main.${{ github.run_number }}
 
+  # Fails on HIGH/CRITICAL vulnerabilities that have a fix available. The image
+  # is already pushed by then; a red run here means the next deploy should wait
+  # for a fix. The weekly run in trivy.yaml rescans for newly published CVEs.
+  scan-image:
+    needs: build-image
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+      security-events: write
+
+    env:
+      TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+      TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db:1
+      IMAGE: ghcr.io/${{ github.repository }}:placer-main-${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Trivy
+        run: ./.github/install-trivy.sh
+
+      - name: Scan the image
+        run: |
+          trivy image --scanners vuln --format sarif --output trivy-image.sarif "$IMAGE"
+          trivy image --scanners vuln --ignore-unfixed --severity HIGH,CRITICAL --exit-code 1 "$IMAGE"
+
+      - name: Upload results to code scanning
+        if: always() && hashFiles('trivy-image.sarif') != ''
+        uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
   publish-chart:
     runs-on: ubuntu-24.04
 
