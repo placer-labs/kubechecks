@@ -22,7 +22,7 @@ type Cache struct {
 
 // NewCache creates a new chart cache at the given directory.
 func NewCache(cacheDir string) (*Cache, error) {
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create chart cache dir %s: %w", cacheDir, err)
 	}
 	return &Cache{cacheDir: cacheDir}, nil
@@ -83,7 +83,7 @@ func (c *Cache) EnsureChart(repoURL, chart, version string) (string, error) {
 	}
 
 	// Ensure parent dir exists and move
-	if err := os.MkdirAll(filepath.Dir(chartDir), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(chartDir), 0o700); err != nil {
 		return "", fmt.Errorf("failed to create cache dir: %w", err)
 	}
 	if err := os.Rename(extractedDir, chartDir); err != nil {

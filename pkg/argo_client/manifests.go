@@ -471,7 +471,7 @@ func copyDir(fs filesys.FileSystem, src, dst string) error {
 
 	if !fs.Exists(dst) {
 		// First create the destination root directory
-		if err := os.MkdirAll(dst, 0o777); err != nil {
+		if err := os.MkdirAll(dst, 0o700); err != nil {
 			return errors.Wrapf(err, "failed to create directory %s", dst)
 		}
 	}
@@ -496,7 +496,7 @@ func copyDir(fs filesys.FileSystem, src, dst string) error {
 
 		// Handle directories
 		if info.IsDir() {
-			if err := os.MkdirAll(dstPath, 0o777); err != nil {
+			if err := os.MkdirAll(dstPath, 0o700); err != nil {
 				return errors.Wrapf(err, "failed to create directory %s", dstPath)
 			}
 			return nil
@@ -509,7 +509,7 @@ func copyDir(fs filesys.FileSystem, src, dst string) error {
 
 func copyFile(srcpath, dstpath string) error {
 	dstdir := filepath.Dir(dstpath)
-	if err := os.MkdirAll(dstdir, 0o777); err != nil {
+	if err := os.MkdirAll(dstdir, 0o700); err != nil {
 		return errors.Wrap(err, "failed to make directories")
 	}
 

@@ -109,7 +109,7 @@ func dumpFiles(manifests []string) (string, error) {
 			Int("size", len(manifestBytes)).
 			Msg("dumping manifest")
 
-		if err = os.WriteFile(fullPath, manifestBytes, 0o666); err != nil {
+		if err = os.WriteFile(fullPath, manifestBytes, 0o600); err != nil {
 			return result, errors.Wrapf(err, "failed to write %s", filename)
 		}
 	}
